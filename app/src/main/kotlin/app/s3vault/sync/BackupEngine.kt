@@ -214,6 +214,10 @@ class BackupEngine(
 
         private suspend fun onRemoteFailure(f: RemoteFailure): ItemOutcome {
             val kind = f.type.errorKind
+            if (f.type == FailureType.CHECKSUM_MISMATCH) {
+                // El hash guardado ya no describe lo que se leyó/subió: recalcular en el próximo intento.
+                item = item.copy(sha256 = null, hashedSizeBytes = null, hashedModifiedMs = null, versionId = null)
+            }
             return when {
                 f.type.blocksQueue -> {
                     requeue(f)
