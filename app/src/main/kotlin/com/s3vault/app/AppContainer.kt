@@ -70,6 +70,7 @@ class AppContainer(private val context: Context) {
         )
     }
     val dayKeys by lazy { DayKeyMaintainer(db, settings) }
+    val libraryStore by lazy { com.s3vault.app.presentation.library.LibraryStore(settings) }
     val cloudDates by lazy { CloudDatesEngine(db, remoteProvider, credentials, catalog) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }

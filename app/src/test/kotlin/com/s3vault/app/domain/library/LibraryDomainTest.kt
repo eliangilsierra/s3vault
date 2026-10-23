@@ -142,7 +142,7 @@ class SearchParserTest {
         val p = parse("IMG vacaciones")
         assertEquals(listOf("IMG", "vacaciones"), p.textTerms)
         assertFalse(p.hasDate)
-        assertEquals(listOf(SearchChip("«IMG»", SearchChip.Type.TEXT), SearchChip("«vacaciones»", SearchChip.Type.TEXT)), p.chips)
+        assertEquals(listOf(SearchChip("«IMG»", SearchChip.Type.TEXT, "IMG"), SearchChip("«vacaciones»", SearchChip.Type.TEXT, "vacaciones")), p.chips)
     }
 
     @Test fun `a year is a date range`() {
@@ -228,5 +228,25 @@ class SearchParserTest {
 
     @Test fun `punctuation around words is ignored`() {
         assertEquals(range(20230101, 20231231), parse("2023,").dateRange)
+    }
+
+    @Test fun `every chip remembers the text it came from`() {
+        val p = parse("IMG marzo de 2023 videos 15 marzo")
+        assertEquals(listOf("IMG", "marzo de 2023", "videos", "15 marzo"), p.chips.map { it.raw })
+    }
+
+    @Test fun `removing a chip removes just its part of the search`() {
+        val text = "IMG marzo 2023 videos"
+        val p = parse(text)
+        assertEquals("IMG videos", SearchParser.remove(text, p.chips[1]))
+        assertEquals("marzo 2023 videos", SearchParser.remove(text, p.chips[0]))
+        assertEquals("IMG marzo 2023", SearchParser.remove(text, p.chips[2]))
+        assertEquals("a chip without text changes nothing", text, SearchParser.remove(text, SearchChip("x", SearchChip.Type.TEXT)))
+    }
+
+    @Test fun `removing works with irregular spacing`() {
+        val text = "marzo   2023  IMG"
+        val p = parse(text)
+        assertEquals("IMG", SearchParser.remove(text, p.chips[0]))
     }
 }

@@ -85,6 +85,7 @@ import com.s3vault.app.presentation.delete.DeleteHost
 import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.formatBytes
+import com.s3vault.app.presentation.library.ItemSource
 import com.s3vault.app.presentation.formatDateTime
 import com.s3vault.app.presentation.openVideo
 import com.s3vault.app.presentation.shareMedia
@@ -105,8 +106,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewerScreen(
-    items: List<MediaItem>,
-    startId: Long,
+    items: ItemSource<MediaItem>,
+    startIndex: Int,
     onBack: () -> Unit,
     onBackup: suspend (MediaItem) -> String,
     deleteVm: DeleteViewModel? = null,
@@ -116,18 +117,19 @@ fun ViewerScreen(
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val reduced = rememberReducedMotion()
-    val startIndex = remember(items.isEmpty()) { items.indexOfFirst { it.mediaStoreId == startId }.coerceAtLeast(0) }
-    val pager = rememberPagerState(initialPage = startIndex) { items.size }
+    val pager = rememberPagerState(initialPage = startIndex.coerceAtLeast(0)) { items.size }
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
-    val current = items.getOrNull(pager.currentPage)
+    val current = items[pager.currentPage]
+    // The list is read a page at a time: keep the neighbours of the photo on screen loaded so swiping never waits.
+    LaunchedEffect(pager.currentPage, items.size) { items.ensure((pager.currentPage - 2).coerceAtLeast(0)..(pager.currentPage + 2)) }
 
     // The last photo was deleted from here: nothing left to show.
     var hadItems by remember { mutableStateOf(false) }
     LaunchedEffect(items.size) {
-        if (items.isNotEmpty()) hadItems = true else if (hadItems) onBack()
+        if (items.size > 0) hadItems = true else if (hadItems) onBack()
     }
 
     // Immersive viewing: light system-bar icons on black, bars hidden together with the controls.
@@ -157,7 +159,8 @@ fun ViewerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pager, userScrollEnabled = !zoomed, beyondViewportPageCount = 1, modifier = Modifier.fillMaxSize()) { page ->
-            val item = items.getOrNull(page) ?: return@HorizontalPager
+            val item = items[page]
+            if (item == null) { Box(Modifier.fillMaxSize()); return@HorizontalPager }
             ZoomableImage(
                 item = item,
                 active = page == pager.currentPage,

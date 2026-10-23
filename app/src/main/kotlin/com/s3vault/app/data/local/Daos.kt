@@ -46,6 +46,13 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media_items WHERE present = 1")
     fun observePresentCount(): Flow<Int>
 
+    /** Photos that sit on the timeline by their file date because no capture date exists. */
+    @Query("SELECT COUNT(*) FROM media_items WHERE present = 1 AND dateSource = 'FALLBACK'")
+    fun observeUndatedCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE mediaStoreId IN (:ids) AND remoteKey IS NOT NULL")
+    suspend fun countWithRemote(ids: List<Long>): Int
+
     @Query(LocalLibrarySql.FOLDERS)
     fun observeFolders(): Flow<List<FolderCount>>
 
@@ -209,6 +216,10 @@ interface RemoteDao {
 
     @Query("SELECT COUNT(*) FROM remote_objects")
     fun observeObjectCount(): Flow<Int>
+
+    /** Objects listed apart because they have no capture date. */
+    @Query("SELECT COUNT(*) FROM remote_objects WHERE dayKey = 0")
+    fun observeUndatedCount(): Flow<Int>
 
     @Query("SELECT * FROM remote_objects")
     suspend fun getAll(): List<RemoteObjectEntity>

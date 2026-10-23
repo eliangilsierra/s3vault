@@ -263,7 +263,7 @@ private fun DayHeader(day: String, count: Int) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MediaCell(
+internal fun MediaCell(
     item: MediaItem,
     selected: Boolean,
     selectionMode: Boolean,

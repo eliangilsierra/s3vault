@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /** A removable piece of the search shown under the field, so the user can see how the text was understood. */
-data class SearchChip(val label: String, val type: Type) {
+data class SearchChip(val label: String, val type: Type, /** The exact text it came from, so removing the chip removes just that part of the search. */ val raw: String = "") {
     enum class Type { TEXT, DATE, KIND }
 }
 
@@ -56,6 +56,19 @@ object SearchParser {
         return if (i >= 0) i + 1 else ABBREVIATIONS[word]
     }
 
+    /** The search text without the part that produced [chip] (what removing a chip does). */
+    fun remove(text: String, chip: SearchChip): String {
+        if (chip.raw.isEmpty()) return text
+        fun cut(from: String, piece: String): String? {
+            val i = from.indexOf(piece)
+            return if (i < 0) null else from.removeRange(i, i + piece.length)
+        }
+        val whole = cut(text, chip.raw)
+            // The user typed extra spaces between the words: remove them one by one.
+            ?: chip.raw.split(' ').filter { it.isNotEmpty() }.fold(text) { acc, w -> cut(acc, w) ?: acc }
+        return whole.replace(Regex("\\s+"), " ").trim()
+    }
+
     fun parse(raw: String, today: LocalDate = LocalDate.now()): ParsedSearch {
         val tokens = raw.trim().split(Regex("\\s+")).map { it.trim(',', ';') }.filter { it.isNotEmpty() }
         if (tokens.isEmpty()) return ParsedSearch()
@@ -84,30 +97,29 @@ object SearchParser {
         }.getOrNull()
         fun chip(label: String) = chips.add(SearchChip(label, SearchChip.Type.DATE))
 
-        var i = 0
-        while (i < tokens.size) {
+        fun step(i: Int): Int {
             val tok = tokens[i]
             val word = DateKeys.fold(tok)
 
             ISO_DAY.matchEntire(tok)?.let { m ->
                 val r = dayRange(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
-                if (r != null) { addRange(r); chip(DateKeys.shortDayLabel(r.fromDay)); i++; continue }
+                if (r != null) { addRange(r); chip(DateKeys.shortDayLabel(r.fromDay)); return i + 1 }
             }
             DMY.matchEntire(tok)?.let { m ->
                 val r = dayRange(m.groupValues[3].toInt(), m.groupValues[2].toInt(), m.groupValues[1].toInt())
-                if (r != null) { addRange(r); chip(DateKeys.shortDayLabel(r.fromDay)); i++; continue }
+                if (r != null) { addRange(r); chip(DateKeys.shortDayLabel(r.fromDay)); return i + 1 }
             }
             ISO_MONTH.matchEntire(tok)?.let { m ->
                 val r = monthRange(m.groupValues[1].toInt(), m.groupValues[2].toInt())
-                if (r != null) { addRange(r); chip(DateKeys.monthLabel(DateKeys.monthKey(r.fromDay))); i++; continue }
+                if (r != null) { addRange(r); chip(DateKeys.monthLabel(DateKeys.monthKey(r.fromDay))); return i + 1 }
             }
             MY.matchEntire(tok)?.let { m ->
                 val r = monthRange(m.groupValues[2].toInt(), m.groupValues[1].toInt())
-                if (r != null) { addRange(r); chip(DateKeys.monthLabel(DateKeys.monthKey(r.fromDay))); i++; continue }
+                if (r != null) { addRange(r); chip(DateKeys.monthLabel(DateKeys.monthKey(r.fromDay))); return i + 1 }
             }
             if (validYear(tok)) {
                 val y = tok.toInt()
-                addRange(DateRange(y * 10_000 + 101, y * 10_000 + 1231)); chip(y.toString()); i++; continue
+                addRange(DateRange(y * 10_000 + 101, y * 10_000 + 1231)); chip(y.toString()); return i + 1
             }
 
             // "15 marzo", "15 de marzo 2023"
@@ -128,8 +140,7 @@ object SearchParser {
                         setMonth(m); setDay(d)
                         chip("$d de ${MONTHS[m - 1]}")
                     }
-                    i = j
-                    continue
+                    return j
                 }
             }
 
@@ -146,8 +157,7 @@ object SearchParser {
                     setMonth(m)
                     chip("Cada ${MONTHS[m - 1]}")
                 }
-                i = j
-                continue
+                return j
             }
 
             when {
@@ -155,7 +165,16 @@ object SearchParser {
                 word in VIDEO_WORDS -> { kind = MediaKind.VIDEO; chips.add(SearchChip("Vídeos", SearchChip.Type.KIND)) }
                 else -> { terms.add(tok); chips.add(SearchChip("«$tok»", SearchChip.Type.TEXT)) }
             }
-            i++
+            return i + 1
+        }
+
+        var i = 0
+        while (i < tokens.size) {
+            val before = chips.size
+            val next = step(i)
+            val raw = tokens.subList(i, next).joinToString(" ")
+            for (k in before until chips.size) chips[k] = chips[k].copy(raw = raw)
+            i = next
         }
 
         if (conflict) range = DateRange(1, 0) // contradictory dates ("marzo abril"): nothing can match, and the chips show why

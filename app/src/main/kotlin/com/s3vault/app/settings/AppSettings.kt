@@ -12,6 +12,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.s3vault.app.domain.AuthMethod
 import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
+import com.s3vault.app.domain.library.GroupBy
+import com.s3vault.app.domain.library.SortField
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -28,6 +30,27 @@ data class BackupSettings(
     val paused: Boolean = false,
     /** Upload a small preview next to every backed-up photo so S3 photos can be previewed without downloading them. */
     val cloudPreviews: Boolean = true,
+)
+
+/** How dense the photo grid is: the minimum width of a cell. */
+enum class GridDensity(val minCellDp: Int, val label: String) {
+    COMFORTABLE(160, "Cómoda"),
+    MEDIUM(112, "Media"),
+    COMPACT(84, "Compacta"),
+}
+
+enum class CloudViewMode { GRID, LIST }
+
+/** How each gallery is sorted, grouped and laid out. Remembered between sessions; filters and searches are not. */
+data class LibraryPrefs(
+    val localSort: SortField = SortField.CAPTURE_DATE,
+    val localDescending: Boolean = true,
+    val localGroup: GroupBy = GroupBy.DAY,
+    val cloudSort: SortField = SortField.CAPTURE_DATE,
+    val cloudDescending: Boolean = true,
+    val cloudGroup: GroupBy = GroupBy.DAY,
+    val density: GridDensity = GridDensity.MEDIUM,
+    val cloudMode: CloudViewMode = CloudViewMode.GRID,
 )
 
 data class ConnectionStatus(
@@ -64,6 +87,14 @@ class AppSettings(private val context: Context) {
         val listedComplete = booleanPreferencesKey("remote_listed_complete")
         val listedCount = intPreferencesKey("remote_listed_count")
         val dayZone = stringPreferencesKey("day_zone")
+        val libLocalSort = stringPreferencesKey("lib_local_sort")
+        val libLocalDesc = booleanPreferencesKey("lib_local_desc")
+        val libLocalGroup = stringPreferencesKey("lib_local_group")
+        val libCloudSort = stringPreferencesKey("lib_cloud_sort")
+        val libCloudDesc = booleanPreferencesKey("lib_cloud_desc")
+        val libCloudGroup = stringPreferencesKey("lib_cloud_group")
+        val libDensity = stringPreferencesKey("lib_density")
+        val libCloudMode = stringPreferencesKey("lib_cloud_mode")
     }
 
     val s3Config: Flow<S3Config?> = store.data.map { p ->
@@ -119,6 +150,31 @@ class AppSettings(private val context: Context) {
     /** Zone the day keys were last computed in; null before the first computation. */
     suspend fun dayZone(): String? = store.data.first()[K.dayZone]
     suspend fun setDayZone(id: String) = store.edit { it[K.dayZone] = id }.let { }
+
+    val libraryPrefs: Flow<LibraryPrefs> = store.data.map { p ->
+        fun <E : Enum<E>> parse(raw: String?, all: Array<E>, default: E): E = all.firstOrNull { it.name == raw } ?: default
+        LibraryPrefs(
+            localSort = parse(p[K.libLocalSort], SortField.entries.toTypedArray(), SortField.CAPTURE_DATE),
+            localDescending = p[K.libLocalDesc] ?: true,
+            localGroup = parse(p[K.libLocalGroup], GroupBy.entries.toTypedArray(), GroupBy.DAY),
+            cloudSort = parse(p[K.libCloudSort], SortField.entries.toTypedArray(), SortField.CAPTURE_DATE),
+            cloudDescending = p[K.libCloudDesc] ?: true,
+            cloudGroup = parse(p[K.libCloudGroup], GroupBy.entries.toTypedArray(), GroupBy.DAY),
+            density = parse(p[K.libDensity], GridDensity.entries.toTypedArray(), GridDensity.MEDIUM),
+            cloudMode = parse(p[K.libCloudMode], CloudViewMode.entries.toTypedArray(), CloudViewMode.GRID),
+        )
+    }
+
+    suspend fun saveLocalView(sort: SortField, descending: Boolean, group: GroupBy) = store.edit {
+        it[K.libLocalSort] = sort.name; it[K.libLocalDesc] = descending; it[K.libLocalGroup] = group.name
+    }.let { }
+
+    suspend fun saveCloudView(sort: SortField, descending: Boolean, group: GroupBy) = store.edit {
+        it[K.libCloudSort] = sort.name; it[K.libCloudDesc] = descending; it[K.libCloudGroup] = group.name
+    }.let { }
+
+    suspend fun saveDensity(d: GridDensity) = store.edit { it[K.libDensity] = d.name }.let { }
+    suspend fun saveCloudMode(m: CloudViewMode) = store.edit { it[K.libCloudMode] = m.name }.let { }
 
     suspend fun currentS3Config(): S3Config? = s3Config.first()
     suspend fun currentBackup(): BackupSettings = backup.first()

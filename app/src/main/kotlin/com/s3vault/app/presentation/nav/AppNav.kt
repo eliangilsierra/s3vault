@@ -60,8 +60,10 @@ import com.s3vault.app.presentation.AlbumsViewModel
 import com.s3vault.app.presentation.AppViewModelFactory
 import com.s3vault.app.presentation.BackupViewModel
 import com.s3vault.app.presentation.GalleryViewModel
+import com.s3vault.app.presentation.LibraryViewerViewModel
 import com.s3vault.app.presentation.GeneralSettingsViewModel
 import com.s3vault.app.presentation.LoadingBox
+import com.s3vault.app.presentation.CloudViewerViewModel
 import com.s3vault.app.presentation.RemoteViewModel
 import com.s3vault.app.presentation.S3SettingsViewModel
 import com.s3vault.app.presentation.SecurityViewModel
@@ -201,9 +203,12 @@ fun AppRoot(container: AppContainer) {
             composable(CLOUD, listOf(navArgument("key") { type = NavType.StringType })) { e ->
                 val vm: RemoteViewModel = viewModel(factory = factory)
                 val deleteVm: DeleteViewModel = viewModel(factory = factory)
-                val items = vm.state.collectAsStateWithLifecycle().value.items
-                if (items.isEmpty()) LoadingBox() else CloudViewerScreen(
-                    items = items, startKey = e.arguments!!.getString("key")!!, vm = vm, deleteVm = deleteVm,
+                val viewerVm: CloudViewerViewModel = viewModel(factory = factory)
+                val startKey = e.arguments!!.getString("key")!!
+                androidx.compose.runtime.LaunchedEffect(startKey) { viewerVm.open(startKey) }
+                val data = viewerVm.data.collectAsStateWithLifecycle().value
+                if (data == null) LoadingBox() else CloudViewerScreen(
+                    items = data.source, startIndex = data.startIndex, vm = vm, deleteVm = deleteVm,
                     onBack = { nav.popBackStack() }, onOpenCredentials = { nav.navigate("settings/security") },
                 )
             }
@@ -234,16 +239,25 @@ fun AppRoot(container: AppContainer) {
                 val source = e.arguments!!.getString("source")!!
                 val startId = e.arguments!!.getLong("id")
                 val scope = rememberCoroutineScope()
-                val items: List<MediaItem>? = if (source == "all") {
-                    val vm: GalleryViewModel = viewModel(factory = factory)
-                    vm.state.collectAsStateWithLifecycle().value.items
+                // "all" is the gallery as the user left it (search, filters, order): a window over the same query.
+                // An album is small, so it is a plain list.
+                val data: com.s3vault.app.presentation.library.ItemSource<MediaItem>?
+                val startIndex: Int
+                if (source == "all") {
+                    val viewerVm: LibraryViewerViewModel = viewModel(factory = factory)
+                    androidx.compose.runtime.LaunchedEffect(startId) { viewerVm.open(startId) }
+                    val d = viewerVm.data.collectAsStateWithLifecycle().value
+                    data = d?.source
+                    startIndex = d?.startIndex ?: 0
                 } else {
                     val vm: AlbumsViewModel = viewModel(factory = factory)
                     val albumId = source.removePrefix("album-").toLong()
-                    androidx.compose.runtime.remember(albumId) { vm.albumMedia(albumId) }.collectAsStateWithLifecycle(initialValue = null).value
+                    val list = androidx.compose.runtime.remember(albumId) { vm.albumMedia(albumId) }.collectAsStateWithLifecycle(initialValue = null).value
+                    data = list?.let { com.s3vault.app.presentation.library.ListSource(it) }
+                    startIndex = list?.indexOfFirst { it.mediaStoreId == startId }?.coerceAtLeast(0) ?: 0
                 }
-                if (items == null) LoadingBox() else ViewerScreen(
-                    items = items, startId = startId,
+                if (data == null) LoadingBox() else ViewerScreen(
+                    items = data, startIndex = startIndex,
                     onBack = { nav.popBackStack() },
                     deleteVm = deleteVm,
                     onOpenCredentials = { nav.navigate("settings/security") },
