@@ -18,6 +18,9 @@ class RemoteKeys(rawPrefix: String) {
     val photosPrefix: String = "${prefix}photos/"
     val connectionCheckKey: String = "${prefix}.s3vault/connection-check.txt"
 
+    /** Album membership published by tools/s3vault_import.py. The app only ever reads it. */
+    val albumManifestKey: String = "${prefix}.s3vault/albums.json"
+
     fun photoKey(assetId: String, versionId: String, displayName: String): String {
         require(ASSET_ID.matches(assetId)) { "Invalid assetId" }
         require(VERSION_ID.matches(versionId)) { "Invalid versionId" }
