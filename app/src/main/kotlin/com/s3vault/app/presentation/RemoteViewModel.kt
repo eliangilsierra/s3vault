@@ -250,6 +250,24 @@ class CloudViewerViewModel(private val c: AppContainer) : ViewModel() {
     val data: StateFlow<Data?> = _data
     private var opened = false
 
+    /**
+     * Opens the viewer on the S3-only photos of an album. They are the album's own list (not the S3 library's query), so
+     * swiping stays inside the album; the list follows the database, so a photo deleted from here drops out by itself.
+     */
+    fun openAlbum(albumId: Long, startKey: String) {
+        if (opened) return
+        opened = true
+        viewModelScope.launch {
+            var first = true
+            c.db.albums().observeAlbumCloud(albumId).collect { rows ->
+                val items = c.remotePage(rows)
+                val start = if (first) items.indexOfFirst { it.key == startKey }.coerceAtLeast(0) else 0
+                first = false
+                _data.value = Data(com.s3vault.app.presentation.library.ListSource(items), start)
+            }
+        }
+    }
+
     fun open(startKey: String) {
         if (opened) return
         opened = true

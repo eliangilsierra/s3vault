@@ -87,6 +87,7 @@ Usa un **bucket de prueba independiente** con el prefijo `s3vault-it/` y la pol�
 7. Elimina una foto del teléfono: el objeto sigue en S3; restáurala desde «S3» y compara `sha256sum`.
 7b. Con la política de [«Permitir borrar desde la app»](iam-policy.md#permitir-borrar-desde-la-app-opcional): en la pestaña S3 elige una foto → «Eliminar de S3». Comprueba con `aws s3 ls --recursive` que desaparecen la foto y `.s3vault/thumbs/<sha256>.jpg`, y que `.s3vault/albums.json` sigue. Con el `Deny` original la app debe explicar que la política no lo permite.
 7c. Mira una foto en la pestaña S3 y revisa en CloudTrail / métricas de S3 que solo hubo un `GET` de la miniatura (y nunca del original).
+7d. Álbumes de S3: con fotos migradas solo a S3 y un `.s3vault/albums.json` válido, Álbumes → icono de nube debe crear los álbumes con sus fotos (vistas previas, sin `GET` de originales). «Quitar del álbum» no toca el objeto.
 8. Quita `GetObject` de la política: «Probar permisos» debe marcar ✗ solo en `s3:GetObject`.
 9. Cambia la región por una equivocada: el mensaje debe indicar la región correcta.
 

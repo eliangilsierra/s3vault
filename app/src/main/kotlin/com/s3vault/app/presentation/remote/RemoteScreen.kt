@@ -124,6 +124,7 @@ import com.s3vault.app.presentation.ui.StatusBanner
 import com.s3vault.app.presentation.ui.Tone
 import com.s3vault.app.presentation.ui.skeleton
 import com.s3vault.app.settings.CloudViewMode
+import com.s3vault.app.sync.PreviewResult
 import com.s3vault.app.sync.Progress
 import kotlinx.coroutines.launch
 
@@ -328,7 +329,7 @@ fun RemoteScreen(
                     header = { sec -> RemoteHeading(layout, sec, selecting, sectionSelection, vm) },
                     cell = { _, obj ->
                         if (obj == null) CellSkeleton() else RemoteCell(
-                            obj, obj.key in selected, selecting, downloads[obj.key], vm,
+                            obj, obj.key in selected, selecting, downloads[obj.key], vm::loadPreview,
                             onClick = { if (selecting) vm.toggle(obj.key) else onOpenPhoto(obj) },
                             onLongClick = {
                                 if (obj.state != SyncState.RESTORING) {
@@ -489,12 +490,12 @@ private fun dateText(obj: RemoteObject): String = when (obj.dateSource) {
 /** One square of the S3 grid: the preview that was uploaded with the photo, where it exists, and where else it lives. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RemoteCell(
+internal fun RemoteCell(
     obj: RemoteObject,
     selected: Boolean,
     selectionMode: Boolean,
     progress: Progress?,
-    vm: RemoteViewModel,
+    load: suspend (RemoteObject) -> PreviewResult,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -510,7 +511,7 @@ private fun RemoteCell(
                 onLongClickLabel = "Seleccionar", onLongClick = onLongClick,
             ),
     ) {
-        RemoteThumb(obj, vm::loadPreview, Modifier.fillMaxSize())
+        RemoteThumb(obj, load, Modifier.fillMaxSize())
         if (selected) Box(Modifier.fillMaxSize().background(primary.copy(alpha = 0.28f)))
         if (obj.mediaKind == MediaKind.VIDEO) {
             Box(Modifier.align(Alignment.Center).size(32.dp).clip(CircleShape).background(PhotoOverlay.scrim), contentAlignment = Alignment.Center) {

@@ -150,7 +150,11 @@ class CloudDeletionController(
                 media.deleteLocalRows(orphans)
                 db.albums().removeMediaEverywhere(orphans)
             }
+            val versions = keys.chunked(500).flatMap { db.remote().getByKeys(it) }.map { it.versionId }.distinct()
             db.remote().forget(keys)
+            // An S3-only album member goes with its last object; while another object has the same content it stays.
+            val gone = versions - versions.chunked(500).flatMap { db.remote().versionsListed(it) }.toSet()
+            gone.chunked(500).forEach { db.albums().removeRemoteItemsEverywhere(it) }
         }
     }
 }

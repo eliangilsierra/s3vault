@@ -96,7 +96,7 @@ private val TabRoutes = Tab.entries.map { it.route }.toSet()
 
 private const val VIEWER = "viewer/{source}/{id}"
 private const val ALBUM = "album/{id}"
-private const val CLOUD = "cloud/{key}"
+private const val CLOUD = "cloud/{key}?album={album}"
 
 @Composable
 fun AppRoot(container: AppContainer) {
@@ -186,6 +186,7 @@ fun AppRoot(container: AppContainer) {
                 AlbumDetailScreen(
                     vm, deleteVm, id, onBack = { nav.popBackStack() },
                     onOpen = { mid -> nav.navigate("viewer/album-$id/$mid") },
+                    onOpenCloud = { obj -> nav.navigate("cloud/" + android.net.Uri.encode(obj.key) + "?album=$id") },
                     onOpenCredentials = { nav.navigate("settings/security") },
                 )
             }
@@ -203,12 +204,21 @@ fun AppRoot(container: AppContainer) {
                     onOpenPhoto = { obj -> nav.navigate("cloud/" + android.net.Uri.encode(obj.key)) },
                 )
             }
-            composable(CLOUD, listOf(navArgument("key") { type = NavType.StringType })) { e ->
+            composable(
+                CLOUD,
+                listOf(
+                    navArgument("key") { type = NavType.StringType },
+                    navArgument("album") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) { e ->
                 val vm: RemoteViewModel = viewModel(factory = factory)
                 val deleteVm: DeleteViewModel = viewModel(factory = factory)
                 val viewerVm: CloudViewerViewModel = viewModel(factory = factory)
                 val startKey = e.arguments!!.getString("key")!!
-                androidx.compose.runtime.LaunchedEffect(startKey) { viewerVm.open(startKey) }
+                val fromAlbum = e.arguments!!.getLong("album")
+                androidx.compose.runtime.LaunchedEffect(startKey, fromAlbum) {
+                    if (fromAlbum >= 0) viewerVm.openAlbum(fromAlbum, startKey) else viewerVm.open(startKey)
+                }
                 val data = viewerVm.data.collectAsStateWithLifecycle().value
                 if (data == null) LoadingBox() else CloudViewerScreen(
                     items = data.source, startIndex = data.startIndex, vm = vm, deleteVm = deleteVm,

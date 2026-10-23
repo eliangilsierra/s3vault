@@ -148,4 +148,7 @@ class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long
 
     /** Removes membership only; the photo file is untouched. */
     suspend fun remove(albumId: Long, mediaIds: List<Long>) = db.albums().removeItems(albumId, mediaIds)
+
+    /** Removes the membership of S3-only photos (by content hash); the objects in S3 are untouched. */
+    suspend fun removeCloud(albumId: Long, versionIds: List<String>) = db.albums().removeRemoteItems(albumId, versionIds)
 }

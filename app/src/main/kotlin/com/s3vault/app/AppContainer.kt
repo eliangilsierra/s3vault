@@ -76,7 +76,7 @@ class AppContainer(private val context: Context) {
     val cloudDates by lazy { CloudDatesEngine(db, remoteProvider, credentials, catalog) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
-    val albumImporter by lazy { AlbumImporter(db, remoteProvider) }
+    val albumImporter by lazy { AlbumImporter(db, remoteProvider, refreshListing = { remoteLibrary.refresh() }) }
 
     /** Test-only (like [S3RemoteStorage]'s own parameter): points the app's S3 client at a local mock server. Never set in production. */
     @androidx.annotation.VisibleForTesting

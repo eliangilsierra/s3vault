@@ -64,7 +64,7 @@ class MigrationTest {
             )
         }
         val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).build()
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
         try {
             val row = db.media().get(7)
             assertNotNull("the row survived", row)
@@ -100,7 +100,7 @@ class MigrationTest {
             )
         }
         val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).build()
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
         try {
             val media = db.media().get(7)!!
             assertEquals("the row survived", "a.jpg", media.displayName)
@@ -117,6 +117,32 @@ class MigrationTest {
             assertEquals(MediaKind.IMAGE, remote.mediaKind)
             assertFalse(remote.metaChecked)
             assertEquals(MediaKind.VIDEO, db.remote().get("p/photos/b/v/clip.mp4")!!.mediaKind)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun version3To4KeepsAlbumsAndAddsRoomForPhotosOnlyInS3() = runBlocking {
+        createDatabase(3) { db ->
+            db.execSQL("INSERT INTO albums (id, name, createdAtMs) VALUES (1, 'Amor', 5)")
+            db.execSQL(
+                "INSERT INTO media_items (mediaStoreId, uri, kind, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height, " +
+                    "folderName, assetId, present, syncState, remoteKey, remoteVersionId, lastErrorPermanent, attempts, thumbnailUploaded, backupExcluded, dayKey, dateSource) " +
+                    "VALUES (7, 'content://media/7', 'IMAGE', 'a.jpg', 'image/jpeg', 10, 1, 2, 3, 4, 'Camera', 'asset', 1, 'LOCAL_ONLY', NULL, NULL, 0, 0, 0, 0, 0, 'CAPTURE')",
+            )
+            db.execSQL("INSERT INTO album_items (albumId, mediaStoreId, addedAtMs) VALUES (1, 7, 6)")
+        }
+        val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
+        try {
+            assertEquals("the album survived", listOf("Amor"), db.albums().all().map { it.name })
+            assertEquals(listOf(7L), db.albums().memberIds(1))
+            assertEquals("a migrated album has no S3-only members yet", emptyList<String>(), db.albums().cloudMemberVersions(1))
+
+            db.albums().addRemoteItems(listOf(com.s3vault.app.data.local.AlbumRemoteItemEntity(1, "a".repeat(64), 9)))
+            assertEquals(listOf("a".repeat(64)), db.albums().cloudMemberVersions(1))
+            db.albums().delete(1)
+            assertEquals("memberships go with their album", emptyList<String>(), db.albums().cloudMemberVersions(1))
         } finally {
             db.close()
         }

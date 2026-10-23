@@ -16,9 +16,10 @@ import java.time.ZoneId
         RemoteObjectEntity::class,
         AlbumEntity::class,
         AlbumItemEntity::class,
+        AlbumRemoteItemEntity::class,
         TransferEventEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,7 +30,19 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "s3vault.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "s3vault.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+
+        /** Albums can hold photos that exist only in S3 (imported from the bucket's album file). Existing albums are untouched. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `album_remote_items` (`albumId` INTEGER NOT NULL, `versionId` TEXT NOT NULL, " +
+                        "`addedAtMs` INTEGER NOT NULL, PRIMARY KEY(`albumId`, `versionId`), " +
+                        "FOREIGN KEY(`albumId`) REFERENCES `albums`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_remote_items_versionId` ON `album_remote_items` (`versionId`)")
+            }
+        }
 
         /**
          * Adds the date model of the smart gallery (day keys, where each date comes from, object kind) and the indexes that

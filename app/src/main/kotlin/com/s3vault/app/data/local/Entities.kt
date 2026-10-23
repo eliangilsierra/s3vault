@@ -133,6 +133,23 @@ data class AlbumItemEntity(
     val addedAtMs: Long,
 )
 
+/**
+ * Membership of a photo that exists only in S3. It is keyed by the content hash (the `versionId` of the key), not by the
+ * object key, so it survives a re-listing and never points at a file that is not there: the photo shows up only while the
+ * cached listing has an object with that version.
+ */
+@Entity(
+    tableName = "album_remote_items",
+    primaryKeys = ["albumId", "versionId"],
+    foreignKeys = [ForeignKey(AlbumEntity::class, ["id"], ["albumId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("versionId")],
+)
+data class AlbumRemoteItemEntity(
+    val albumId: Long,
+    val versionId: String,
+    val addedAtMs: Long,
+)
+
 /** Capped local log of transfer outcomes (shown in the Backup screen). */
 @Entity(tableName = "transfer_events", indices = [Index("timestampMs")])
 data class TransferEventEntity(
@@ -151,8 +168,10 @@ data class AlbumRow(
     val itemCount: Int,
     val coverMediaStoreId: Long?,
     val coverUri: String?,
+    /** Key of the S3 object used as the cover when no photo of the album is on this device. */
+    val coverRemoteKey: String? = null,
 ) {
-    fun toDomain() = Album(id, name, itemCount, coverMediaStoreId, coverUri)
+    fun toDomain(coverRemote: RemoteObject? = null) = Album(id, name, itemCount, coverMediaStoreId, coverUri, coverRemote)
 }
 
 data class StateCount(val syncState: SyncState, val n: Int)

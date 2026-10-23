@@ -266,6 +266,10 @@ interface RemoteDao {
     @Query("SELECT * FROM remote_objects WHERE key IN (:keys)")
     suspend fun getByKeys(keys: List<String>): List<RemoteObjectEntity>
 
+    /** Which of these versions (content hashes) have an object in the cached listing. */
+    @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds)")
+    suspend fun versionsListed(versionIds: List<String>): List<String>
+
     /** Versions (content hashes) that some object outside [excludedKeys] still uses, so their shared preview must stay. */
     @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds) AND key NOT IN (:excludedKeys)")
     suspend fun versionsStillUsed(versionIds: List<String>, excludedKeys: List<String>): List<String>
@@ -292,17 +296,33 @@ interface RemoteDao {
     suspend fun clear()
 }
 
+/**
+ * S3-only members of an album that count and show: the photo is in the cached listing, and the album has no copy of it on
+ * this device (that copy is the member then, so the photo is never listed twice).
+ */
+private const val VISIBLE_CLOUD_MEMBERS =
+    "FROM album_remote_items ri WHERE ri.albumId = a.id " +
+        "AND EXISTS (SELECT 1 FROM remote_objects r WHERE r.versionId = ri.versionId) " +
+        "AND NOT EXISTS (SELECT 1 FROM album_items li JOIN media_items lm ON lm.mediaStoreId = li.mediaStoreId " +
+        "WHERE li.albumId = ri.albumId AND lm.present = 1 AND (lm.contentSha256 = ri.versionId OR lm.remoteVersionId = ri.versionId))"
+
+private const val ALBUM_ITEM_COUNT =
+    "((SELECT COUNT(*) FROM album_items ai JOIN media_items m ON m.mediaStoreId = ai.mediaStoreId " +
+        "WHERE ai.albumId = a.id AND m.present = 1) + (SELECT COUNT(*) " + VISIBLE_CLOUD_MEMBERS + "))"
+
 @Dao
 interface AlbumDao {
     @Query(
-        "SELECT a.id AS id, a.name AS name, COUNT(m.mediaStoreId) AS itemCount, " +
+        "SELECT a.id AS id, a.name AS name, " + ALBUM_ITEM_COUNT + " AS itemCount, " +
             "(SELECT m2.mediaStoreId FROM album_items ai2 JOIN media_items m2 ON m2.mediaStoreId = ai2.mediaStoreId " +
             " WHERE ai2.albumId = a.id AND m2.present = 1 ORDER BY ai2.addedAtMs DESC LIMIT 1) AS coverMediaStoreId, " +
             "(SELECT m3.uri FROM album_items ai3 JOIN media_items m3 ON m3.mediaStoreId = ai3.mediaStoreId " +
-            " WHERE ai3.albumId = a.id AND m3.present = 1 ORDER BY ai3.addedAtMs DESC LIMIT 1) AS coverUri " +
-            "FROM albums a LEFT JOIN album_items ai ON ai.albumId = a.id " +
-            "LEFT JOIN media_items m ON m.mediaStoreId = ai.mediaStoreId AND m.present = 1 " +
-            "GROUP BY a.id ORDER BY a.name COLLATE NOCASE",
+            " WHERE ai3.albumId = a.id AND m3.present = 1 ORDER BY ai3.addedAtMs DESC LIMIT 1) AS coverUri, " +
+            "(SELECT MIN(r3.`key`) FROM remote_objects r3 WHERE r3.versionId = " +
+            " (SELECT ri3.versionId FROM album_remote_items ri3 WHERE ri3.albumId = a.id " +
+            "  AND EXISTS (SELECT 1 FROM remote_objects r4 WHERE r4.versionId = ri3.versionId) " +
+            "  ORDER BY ri3.addedAtMs DESC, ri3.versionId LIMIT 1)) AS coverRemoteKey " +
+            "FROM albums a ORDER BY a.name COLLATE NOCASE",
     )
     fun observeAlbums(): Flow<List<AlbumRow>>
 
@@ -342,6 +362,32 @@ interface AlbumDao {
 
     @Query("DELETE FROM album_items WHERE mediaStoreId IN (:ids)")
     suspend fun removeMediaEverywhere(ids: List<Long>)
+
+    // ---- Photos that exist only in S3.
+
+    /** One object per version, newest first, for the S3-only part of an album (same rule as [VISIBLE_CLOUD_MEMBERS]). */
+    @Query(
+        "SELECT r.* FROM remote_objects r JOIN album_remote_items ri ON ri.versionId = r.versionId " +
+            "WHERE ri.albumId = :albumId " +
+            "AND r.`key` = (SELECT MIN(r2.`key`) FROM remote_objects r2 WHERE r2.versionId = r.versionId) " +
+            "AND NOT EXISTS (SELECT 1 FROM album_items li JOIN media_items lm ON lm.mediaStoreId = li.mediaStoreId " +
+            "WHERE li.albumId = ri.albumId AND lm.present = 1 AND (lm.contentSha256 = ri.versionId OR lm.remoteVersionId = ri.versionId)) " +
+            "ORDER BY r.effectiveDateMs DESC, r.`key`",
+    )
+    fun observeAlbumCloud(albumId: Long): Flow<List<RemoteObjectEntity>>
+
+    @Query("SELECT versionId FROM album_remote_items WHERE albumId = :albumId")
+    suspend fun cloudMemberVersions(albumId: Long): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addRemoteItems(items: List<AlbumRemoteItemEntity>)
+
+    @Query("DELETE FROM album_remote_items WHERE albumId = :albumId AND versionId IN (:versionIds)")
+    suspend fun removeRemoteItems(albumId: Long, versionIds: List<String>)
+
+    /** The S3 photo was deleted on purpose: no album keeps a pointer to it. */
+    @Query("DELETE FROM album_remote_items WHERE versionId IN (:versionIds)")
+    suspend fun removeRemoteItemsEverywhere(versionIds: List<String>)
 }
 
 @Dao

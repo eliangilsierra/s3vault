@@ -56,6 +56,8 @@ data class Album(
     val itemCount: Int,
     val coverMediaStoreId: Long?,
     val coverUri: String?,
+    /** An S3-only photo standing in as the cover (used when none of the album's photos is on this device). */
+    val coverRemote: RemoteObject? = null,
 )
 
 /** One object found under `{prefix}photos/` in the bucket. */

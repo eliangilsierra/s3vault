@@ -15,6 +15,7 @@ import com.s3vault.app.domain.PermissionReport
 import com.s3vault.app.domain.RemoteErrorKind
 import com.s3vault.app.domain.RemoteException
 import com.s3vault.app.domain.RemoteObject
+import com.s3vault.app.sync.PreviewResult
 import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
 import com.s3vault.app.domain.SyncState
@@ -61,12 +62,21 @@ private fun <T> Flow<T>.eagerly(scope: kotlinx.coroutines.CoroutineScope, initia
 // ---------------------------------------------------------------- Albums
 
 class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
-    val albums: StateFlow<List<Album>?> =
-        c.db.albums().observeAlbums().map { l -> l.map { it.toDomain() } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val albums: StateFlow<List<Album>?> = c.db.albums().observeAlbums().map { rows ->
+        // Albums with no photo on this device show an S3 photo as their cover (its preview, never the original).
+        val keys = rows.filter { it.coverUri == null }.mapNotNull { it.coverRemoteKey }
+        val covers = if (keys.isEmpty()) emptyMap() else c.remotePage(c.db.remote().getByKeys(keys)).associateBy { it.key }
+        rows.map { it.toDomain(it.coverRemoteKey?.let(covers::get)) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     val selection: StateFlow<Set<Long>> = selected.asStateFlow()
+    private val selectedCloud = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Keys of the selected S3-only photos of the open album. */
+    val cloudSelection: StateFlow<Set<String>> = selectedCloud.asStateFlow()
     val uploads = c.progress.uploads
+    val downloads = c.progress.downloads
 
     private val importing = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = importing.asStateFlow()
@@ -92,22 +102,7 @@ class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private fun describe(r: com.s3vault.app.sync.AlbumImporter.Result): String = when (r) {
-        com.s3vault.app.sync.AlbumImporter.Result.NotConfigured -> "Configura Amazon S3 para importar álbumes."
-        com.s3vault.app.sync.AlbumImporter.Result.NoManifest ->
-            "No hay álbumes publicados en tu bucket (o no hay permiso para leerlos). Se generan con tools/s3vault_import.py."
-        is com.s3vault.app.sync.AlbumImporter.Result.Invalid -> "El archivo de álbumes de S3 no es válido: ${r.reason}."
-        is com.s3vault.app.sync.AlbumImporter.Result.Imported -> when {
-            r.photosAdded == 0 && r.albumsCreated == 0 && r.photosUnmatched > 0 ->
-                "Ninguna foto de esos álbumes está identificada en este dispositivo. Ve a Respaldo y pulsa «Respaldar pendientes»: " +
-                    "las fotos que ya están en S3 se enlazan por contenido, sin volver a subirse. Después importa de nuevo."
-            r.photosAdded == 0 && r.albumsCreated == 0 -> "Los álbumes ya estaban al día."
-            else -> buildString {
-                append("Álbumes nuevos: ${r.albumsCreated}. Fotos añadidas: ${r.photosAdded}.")
-                if (r.photosUnmatched > 0) append(" ${r.photosUnmatched} todavía no están identificadas en este dispositivo.")
-            }
-        }
-    }
+    private fun describe(r: com.s3vault.app.sync.AlbumImporter.Result): String = com.s3vault.app.presentation.albums.AlbumImportMessages.describe(r)
 
     fun albumName(id: Long): Flow<String?> = c.db.albums().observeAlbum(id).map { it?.name }
     fun albumMedia(id: Long): Flow<List<MediaItem>> = c.db.albums().observeAlbumMedia(id).map { l -> l.map(MediaItemEntity::toDomain) }
@@ -116,11 +111,37 @@ class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
     fun rename(id: Long, name: String) { viewModelScope.launch { c.albums.rename(id, name) } }
     fun delete(id: Long) { viewModelScope.launch { c.albums.delete(id) } }
 
+    /** The S3-only photos of an album, as listed objects (their previews load without downloading the original). */
+    fun albumCloud(id: Long): Flow<List<RemoteObject>> = c.db.albums().observeAlbumCloud(id).map { c.remotePage(it) }
+
+    /** Preview of one S3 photo without downloading the original (see RemotePreviewRepository for the lookup order). */
+    suspend fun loadPreview(obj: RemoteObject): PreviewResult = c.previews.load(obj)
+
     fun toggle(id: Long) = selected.update { if (id in it) it - id else it + id }
-    fun clearSelection() { selected.value = emptySet() }
-    fun removeSelected(albumId: Long) {
+    fun toggleCloud(key: String) = selectedCloud.update { if (key in it) it - key else it + key }
+    fun clearSelection() { selected.value = emptySet(); selectedCloud.value = emptySet() }
+
+    /** Takes the selected photos out of the album (on the device and in S3 alike); no file or object is touched. */
+    fun removeSelected(albumId: Long, cloud: List<RemoteObject>) {
         val ids = selected.value.toList()
-        viewModelScope.launch { c.albums.remove(albumId, ids); clearSelection() }
+        val chosen = selectedCloud.value
+        val versions = cloud.filter { it.key in chosen }.map { it.versionId }
+        viewModelScope.launch {
+            if (ids.isNotEmpty()) c.albums.remove(albumId, ids)
+            if (versions.isNotEmpty()) c.albums.removeCloud(albumId, versions)
+            clearSelection()
+        }
+    }
+
+    /** Queues the selected S3 photos for restore as new local copies; existing files are never overwritten. */
+    fun restoreSelectedCloud() {
+        val keys = selectedCloud.value.toList()
+        viewModelScope.launch {
+            val n = c.remoteLibrary.restore(keys)
+            importMessage.value = if (n == 0) "Ya están en cola de restauración."
+            else "$n foto(s) en cola de restauración. Se guardarán como copias nuevas en Imágenes/S3Vault; nunca se sobrescribe un archivo existente."
+            clearSelection()
+        }
     }
 
     fun backupSelected() {
