@@ -18,6 +18,7 @@ import com.s3vault.app.domain.S3Config
 import com.s3vault.app.security.KeystoreSecretStore
 import com.s3vault.app.settings.AppSettings
 import com.s3vault.app.sync.AlbumController
+import com.s3vault.app.sync.AlbumImporter
 import com.s3vault.app.sync.BackupController
 import com.s3vault.app.sync.BackupEngine
 import com.s3vault.app.sync.EventLog
@@ -54,6 +55,7 @@ class AppContainer(private val context: Context) {
     val catalog by lazy { RemoteCatalog(db) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
+    val albumImporter by lazy { AlbumImporter(db, remoteProvider) }
 
     val remoteProvider: RemoteContextProvider = CachingRemoteProvider(settings, credentials)
 

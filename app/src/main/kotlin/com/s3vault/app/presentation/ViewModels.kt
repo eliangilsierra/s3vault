@@ -153,6 +153,47 @@ class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
     val selection: StateFlow<Set<Long>> = selected.asStateFlow()
     val uploads = c.progress.uploads
 
+    private val importing = MutableStateFlow(false)
+    val isImporting: StateFlow<Boolean> = importing.asStateFlow()
+    private val importMessage = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = importMessage.asStateFlow()
+    fun dismissMessage() { importMessage.value = null }
+
+    /** Reads the album file published in the bucket and creates the matching local albums. */
+    fun importFromS3() {
+        if (importing.value) return
+        viewModelScope.launch {
+            importing.value = true
+            importMessage.value = try {
+                describe(c.albumImporter.importFromRemote())
+            } catch (e: RemoteException) {
+                e.message ?: e.kind.userMessage
+            } catch (e: Exception) {
+                com.s3vault.app.security.SafeLog.e("AlbumsViewModel", "Album import failed unexpectedly", e)
+                RemoteErrorKind.UNKNOWN.userMessage
+            } finally {
+                importing.value = false
+            }
+        }
+    }
+
+    private fun describe(r: com.s3vault.app.sync.AlbumImporter.Result): String = when (r) {
+        com.s3vault.app.sync.AlbumImporter.Result.NotConfigured -> "Configura Amazon S3 para importar álbumes."
+        com.s3vault.app.sync.AlbumImporter.Result.NoManifest ->
+            "No hay álbumes publicados en tu bucket (o no hay permiso para leerlos). Se generan con tools/s3vault_import.py."
+        is com.s3vault.app.sync.AlbumImporter.Result.Invalid -> "El archivo de álbumes de S3 no es válido: ${r.reason}."
+        is com.s3vault.app.sync.AlbumImporter.Result.Imported -> when {
+            r.photosAdded == 0 && r.albumsCreated == 0 && r.photosUnmatched > 0 ->
+                "Ninguna foto de esos álbumes está identificada en este dispositivo. Ve a Respaldo y pulsa «Respaldar pendientes»: " +
+                    "las fotos que ya están en S3 se enlazan por contenido, sin volver a subirse. Después importa de nuevo."
+            r.photosAdded == 0 && r.albumsCreated == 0 -> "Los álbumes ya estaban al día."
+            else -> buildString {
+                append("Álbumes nuevos: ${r.albumsCreated}. Fotos añadidas: ${r.photosAdded}.")
+                if (r.photosUnmatched > 0) append(" ${r.photosUnmatched} todavía no están identificadas en este dispositivo.")
+            }
+        }
+    }
+
     fun albumName(id: Long): Flow<String?> = c.db.albums().observeAlbum(id).map { it?.name }
     fun albumMedia(id: Long): Flow<List<MediaItem>> = c.db.albums().observeAlbumMedia(id).map { l -> l.map(MediaItemEntity::toDomain) }
 

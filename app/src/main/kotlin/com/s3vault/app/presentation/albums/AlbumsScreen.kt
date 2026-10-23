@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -31,8 +32,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,18 +62,33 @@ import com.s3vault.app.presentation.ui.BackButton
 import com.s3vault.app.presentation.ui.ConfirmDialog
 import com.s3vault.app.presentation.ui.EmptyState
 import com.s3vault.app.presentation.ui.QuietButton
+import com.s3vault.app.presentation.ui.SecondaryButton
+import com.s3vault.app.presentation.ui.SlimProgress
 
 @Composable
 fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
     val albums by vm.albums.collectAsStateWithLifecycle()
+    val importing by vm.isImporting.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
     var creating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it, duration = SnackbarDuration.Long); vm.dismissMessage() }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             AppTopBar(
                 "Álbumes",
                 subtitle = albums?.takeIf { it.isNotEmpty() }?.let { if (it.size == 1) "1 álbum" else "${it.size} álbumes" },
+                actions = {
+                    IconButton(onClick = vm::importFromS3, enabled = !importing) {
+                        Icon(Icons.Filled.CloudDownload, "Importar álbumes de S3")
+                    }
+                },
             )
         },
         floatingActionButton = {
@@ -87,7 +107,12 @@ fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
                     icon = Icons.Filled.PhotoAlbum,
                     title = "Aún no hay álbumes",
                     body = "Los álbumes son agrupaciones virtuales. Crear, renombrar o borrar un álbum nunca elimina fotos, ni del dispositivo ni de S3.",
-                )
+                ) {
+                    SecondaryButton(
+                        "Importar álbumes de S3", vm::importFromS3, Modifier.fillMaxWidth(),
+                        enabled = !importing, icon = Icons.Filled.CloudDownload,
+                    )
+                }
                 else -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(156.dp),
                     contentPadding = PaddingValues(start = Space.screen, end = Space.screen, top = Space.s, bottom = 96.dp),
@@ -97,6 +122,7 @@ fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
                     items(list, key = { it.id }) { AlbumTile(it) { onOpenAlbum(it.id) } }
                 }
             }
+            if (importing) SlimProgress(null, Modifier.align(Alignment.TopCenter).padding(horizontal = Space.screen))
         }
     }
     if (creating) {
