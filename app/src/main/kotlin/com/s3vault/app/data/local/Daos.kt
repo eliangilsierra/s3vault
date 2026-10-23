@@ -9,8 +9,14 @@ import androidx.room.Update
 import com.s3vault.app.domain.SyncState
 import kotlinx.coroutines.flow.Flow
 
+data class HashedItem(val mediaStoreId: Long, val contentSha256: String?, val remoteVersionId: String?)
+
 @Dao
 interface MediaDao {
+    /** Local files whose content is known (hashed before an upload, or linked to a remote version). */
+    @Query("SELECT mediaStoreId, contentSha256, remoteVersionId FROM media_items WHERE present = 1 AND (contentSha256 IS NOT NULL OR remoteVersionId IS NOT NULL)")
+    suspend fun hashedItems(): List<HashedItem>
+
     @Query("SELECT * FROM media_items WHERE present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE') ORDER BY dateTakenMs DESC, mediaStoreId DESC")
     fun observeGallery(includeVideos: Boolean): Flow<List<MediaItemEntity>>
 
@@ -158,6 +164,12 @@ interface AlbumDao {
             "WHERE ai.albumId = :albumId AND m.present = 1 ORDER BY m.dateTakenMs DESC",
     )
     fun observeAlbumMedia(albumId: Long): Flow<List<MediaItemEntity>>
+
+    @Query("SELECT * FROM albums")
+    suspend fun all(): List<AlbumEntity>
+
+    @Query("SELECT mediaStoreId FROM album_items WHERE albumId = :albumId")
+    suspend fun memberIds(albumId: Long): List<Long>
 
     @Query("SELECT albumId FROM album_items WHERE mediaStoreId = :mediaId")
     suspend fun albumsOf(mediaId: Long): List<Long>
