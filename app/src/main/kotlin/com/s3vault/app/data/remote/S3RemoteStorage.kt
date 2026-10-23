@@ -23,6 +23,7 @@ import aws.smithy.kotlin.runtime.net.url.Url
 import aws.smithy.kotlin.runtime.time.Instant as SdkInstant
 import com.s3vault.app.domain.AwsCredentialsProvider
 import com.s3vault.app.domain.DeleteReport
+import com.s3vault.app.domain.PagedListing
 import com.s3vault.app.domain.PermissionCheck
 import com.s3vault.app.domain.PermissionReport
 import com.s3vault.app.domain.RemoteErrorKind
@@ -153,6 +154,7 @@ class S3RemoteStorage(
     override suspend fun listPhotos(): List<RemoteListing> {
         val out = ArrayList<RemoteListing>()
         var token: String? = null
+        var requests = 0
         do {
             val resp = guarded(OperationContext.LIST) {
                 client.listObjectsV2(
@@ -163,13 +165,14 @@ class S3RemoteStorage(
                     },
                 )
             }
+            requests++
             resp.contents.orEmpty().forEach { o ->
                 val k = o.key ?: return@forEach
-                if (keys.isPhotoKey(k)) out += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L)
+                out += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L, o.storageClass?.value)
             }
             token = if (resp.isTruncated == true) resp.nextContinuationToken else null
         } while (token != null)
-        return out
+        return PagedListing(out, requests)
     }
 
     override suspend fun head(key: String): RemoteObjectMetadata? {

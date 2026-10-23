@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.s3vault.app.domain.AuthMethod
 import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
+import com.s3vault.app.domain.cost.StorageInventory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -29,6 +30,9 @@ data class BackupSettings(
     /** Upload a small preview next to every backed-up photo so S3 photos can be previewed without downloading them. */
     val cloudPreviews: Boolean = true,
 )
+
+/** The last time the bucket inventory was tried: when, and why it failed (null = it worked). */
+data class InventoryAttempt(val atMs: Long, val error: String?)
 
 data class ConnectionStatus(
     val verifiedAtMs: Long?,
@@ -60,6 +64,9 @@ class AppSettings(private val context: Context) {
         val connMessage = stringPreferencesKey("conn_message")
         val needsCredentials = booleanPreferencesKey("needs_credentials")
         val lastSuccessfulTransfer = longPreferencesKey("last_success")
+        val inventory = stringPreferencesKey("storage_inventory")
+        val inventoryAttemptMs = longPreferencesKey("storage_inventory_attempt_ms")
+        val inventoryError = stringPreferencesKey("storage_inventory_error")
     }
 
     val s3Config: Flow<S3Config?> = store.data.map { p ->
@@ -98,6 +105,26 @@ class AppSettings(private val context: Context) {
     val needsCredentials: Flow<Boolean> = store.data.map { it[K.needsCredentials] ?: false }
 
     val lastSuccessfulTransferMs: Flow<Long?> = store.data.map { it[K.lastSuccessfulTransfer] }
+
+    /** Last complete inventory of the bucket, or null if none was taken (or the stored one is unreadable). */
+    val inventory: Flow<StorageInventory?> = store.data.map { p -> p[K.inventory]?.let(InventoryCodec::decode) }
+
+    val inventoryAttempt: Flow<InventoryAttempt?> = store.data.map { p ->
+        p[K.inventoryAttemptMs]?.let { InventoryAttempt(it, p[K.inventoryError]) }
+    }
+
+    suspend fun saveInventory(i: StorageInventory) {
+        store.edit {
+            it[K.inventory] = InventoryCodec.encode(i)
+            it[K.inventoryAttemptMs] = i.takenAtMs
+            it.remove(K.inventoryError)
+        }
+    }
+
+    /** A failed attempt never replaces the last complete inventory; it is only remembered so the UI can say so. */
+    suspend fun saveInventoryFailure(atMs: Long, message: String) {
+        store.edit { it[K.inventoryAttemptMs] = atMs; it[K.inventoryError] = message.take(300) }
+    }
 
     suspend fun currentS3Config(): S3Config? = s3Config.first()
     suspend fun currentBackup(): BackupSettings = backup.first()
@@ -138,6 +165,7 @@ class AppSettings(private val context: Context) {
             it.remove(K.region); it.remove(K.bucket); it.remove(K.prefix); it.remove(K.authMethod)
             it.remove(K.connVerifiedAt); it.remove(K.connOk); it.remove(K.connMessage)
             it[K.needsCredentials] = false
+            it.remove(K.inventory); it.remove(K.inventoryAttemptMs); it.remove(K.inventoryError)
         }
     }
 }

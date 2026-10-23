@@ -28,6 +28,7 @@ import com.s3vault.app.sync.CloudDeletionController
 import com.s3vault.app.sync.LocalDeletionController
 import com.s3vault.app.sync.RemotePreviewRepository
 import com.s3vault.app.sync.EventLog
+import com.s3vault.app.sync.InventoryStore
 import com.s3vault.app.sync.LibraryRepository
 import com.s3vault.app.sync.MediaAccess
 import com.s3vault.app.sync.RemoteCatalog
@@ -59,7 +60,7 @@ class AppContainer(private val context: Context) {
     val library: LibraryRepository by lazy {
         LibraryRepository(mediaSource, MediaIndexer(db)) { mediaAccess() }
     }
-    val catalog by lazy { RemoteCatalog(db) }
+    val catalog by lazy { RemoteCatalog(db, inventoryStore = InventoryStore { settings.saveInventory(it) }) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
     val albumImporter by lazy { AlbumImporter(db, remoteProvider) }
@@ -76,7 +77,7 @@ class AppContainer(private val context: Context) {
     val previews by lazy { RemotePreviewRepository(File(context.cacheDir, "remote-previews"), remoteProvider, ExifThumbnailReader()) }
 
     /** Two separate, explicit deletions: S3 objects, and the settling of files Android removed from the device. */
-    val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider) { previews.evict(it) } }
+    val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider, { previews.evict(it) }, events) }
     val mediaGateway by lazy { MediaStoreGateway(context) }
     val localDeletion by lazy { LocalDeletionController(db, mediaGateway) }
 
@@ -130,7 +131,7 @@ private class CachingRemoteProvider(
         val ep = endpoint()
         if (config != cachedConfig || ep != cachedEndpoint) {
             (cached?.storage as? S3RemoteStorage)?.close()
-            cached = RemoteContext(S3RemoteStorage(config, credentials, ep), RemoteKeys(config.prefix))
+            cached = RemoteContext(S3RemoteStorage(config, credentials, ep), RemoteKeys(config.prefix), config)
             cachedConfig = config
             cachedEndpoint = ep
         }

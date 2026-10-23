@@ -293,6 +293,7 @@ private fun EventRow(e: TransferEvent) {
         TransferEventType.RESTORE_FAILED -> Triple("Fallo al restaurar", Icons.Filled.ErrorOutline, Tone.Error)
         TransferEventType.PAUSED -> Triple("Pausa", Icons.Filled.Pause, Tone.Neutral)
         TransferEventType.CREDENTIALS_NEEDED -> Triple("Credenciales necesarias", Icons.Filled.ErrorOutline, Tone.Warning)
+        TransferEventType.CLOUD_DELETED -> Triple("Eliminadas de S3", Icons.Filled.CheckCircle, Tone.Neutral)
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.m)) {
         Icon(icon, null, Modifier.padding(top = 2.dp).size(18.dp), tint = tone.accent())

@@ -8,7 +8,10 @@ import com.s3vault.app.domain.RemoteStorage
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.security.Redactor
 import com.s3vault.app.security.SafeLog
+import com.s3vault.app.domain.TransferEventType
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 
 /**
@@ -72,6 +75,8 @@ class CloudDeletionController(
     private val db: AppDatabase,
     private val remote: RemoteContextProvider,
     private val onVersionsDeleted: (Collection<String>) -> Unit = {},
+    /** One entry per run with what was really deleted: the storage-cost estimate uses it to tell its inventory is stale. */
+    private val events: EventLog? = null,
 ) {
     suspend fun delete(keys: List<String>, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): CloudDeleteResult {
         val ctx = remote.get() ?: throw RemoteException(RemoteErrorKind.NOT_CONFIGURED)
@@ -86,29 +91,34 @@ class CloudDeletionController(
         var done = 0
         onProgress(0, eligible.size)
 
-        for (batch in eligible.chunked(RemoteStorage.MAX_DELETE_BATCH)) {
-            currentCoroutineContext().ensureActive()
-            val reason = stopReason
-            if (reason != null) {
-                batch.forEach { failed[it] = reason } // not attempted: the same cause would repeat
-            } else {
-                try {
-                    val report = ctx.storage.delete(batch)
-                    failed += report.failed
-                    if (report.deleted.isNotEmpty()) {
-                        deleted += report.deleted
-                        deletePreviews(ctx, report.deleted)
-                        forget(report.deleted)
+        try {
+            for (batch in eligible.chunked(RemoteStorage.MAX_DELETE_BATCH)) {
+                currentCoroutineContext().ensureActive()
+                val reason = stopReason
+                if (reason != null) {
+                    batch.forEach { failed[it] = reason } // not attempted: the same cause would repeat
+                } else {
+                    try {
+                        val report = ctx.storage.delete(batch)
+                        failed += report.failed
+                        if (report.deleted.isNotEmpty()) {
+                            deleted += report.deleted
+                            deletePreviews(ctx, report.deleted)
+                            forget(report.deleted)
+                        }
+                        // A per-key AccessDenied is the IAM policy: the rest of the batches would be refused as well.
+                        if (RemoteErrorKind.ACCESS_DENIED in report.failed.values) stopReason = RemoteErrorKind.ACCESS_DENIED
+                    } catch (e: RemoteException) {
+                        batch.forEach { failed[it] = e.kind }
+                        stopReason = e.kind
                     }
-                    // A per-key AccessDenied is the IAM policy: the rest of the batches would be refused as well.
-                    if (RemoteErrorKind.ACCESS_DENIED in report.failed.values) stopReason = RemoteErrorKind.ACCESS_DENIED
-                } catch (e: RemoteException) {
-                    batch.forEach { failed[it] = e.kind }
-                    stopReason = e.kind
                 }
+                done += batch.size
+                onProgress(done, eligible.size)
             }
-            done += batch.size
-            onProgress(done, eligible.size)
+        } finally {
+            // Also when cancelled half way: what was deleted stays deleted and must be counted.
+            if (deleted.isNotEmpty()) withContext(NonCancellable) { events?.log(TransferEventType.CLOUD_DELETED, "${deleted.size} elementos") }
         }
         return CloudDeleteResult(deleted, failed, restoring.size)
     }

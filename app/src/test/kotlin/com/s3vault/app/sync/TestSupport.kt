@@ -47,7 +47,7 @@ class FakeCredentials : AwsCredentialsProvider {
 
 /** In-memory S3 stand-in with failure injection. [deleteCalls] records every delete so tests can prove what was (not) deleted. */
 class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
-    class Obj(val bytes: ByteArray, val sha256B64: String, val etag: String)
+    class Obj(val bytes: ByteArray, val sha256B64: String, val etag: String, val storageClass: String = "STANDARD")
 
     val objects = linkedMapOf<String, Obj>()
     val uploadedKeys = mutableListOf<String>()
@@ -79,7 +79,8 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
 
     override suspend fun listPhotos(): List<RemoteListing> {
         listFailure?.let { throw it }
-        return objects.filterKeys { keys.isPhotoKey(it) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), 1_000L) }
+        // Like S3: everything under photos/, recognised photo keys or not.
+        return objects.filterKeys { it.startsWith(keys.photosPrefix) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), 1_000L, o.storageClass) }
     }
 
     override suspend fun head(key: String): RemoteObjectMetadata? {
@@ -204,7 +205,7 @@ class TestEnv(val prefix: String = "mi/prefijo/") {
         thumbnails = thumbnails, previewsEnabled = previewsEnabled,
     )
 
-    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted)
+    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted, events)
 
     fun restoreEngine(sink: RestoreSink, partDir: File) =
         RestoreEngine(db, provider, creds, sink, partDir, progress, events)
