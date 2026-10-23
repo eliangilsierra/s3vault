@@ -5,6 +5,7 @@ Un único módulo Gradle (`:app`) con paquetes por responsabilidad. Suficiente p
 ```
 com.s3vault.app
 ├── domain/          modelos, máquina de estados, claves S3, validación, errores, contratos (RemoteStorage, AwsCredentialsProvider)
+│   └── cost/        inventario del bucket, tabla de precios (generada) y estimador de coste: código puro
 ├── data/local/      Room (índice y estado de sincronización), MediaStore (lectura), MediaIndexer (reconciliación)
 ├── data/remote/     S3RemoteStorage (AWS SDK for Kotlin) + clasificación de errores
 ├── auth/            CredentialsRepository (validación, caducidad, almacenamiento), parser de credenciales temporales
@@ -40,6 +41,7 @@ Principios:
 - **Hilos:** MediaStore, hashing y disco en `Dispatchers.IO`; todo el trabajo S3 se fija a IO dentro de `S3RemoteStorage` (incluido el cierre del cliente), porque los ViewModels llaman desde `Main`. Hubo un bug real de `NetworkOnMainThreadException` en la build release que lo demostró; hay una prueba instrumentada que lo protege.
 - **Previsualizar y borrar sin backend:** las miniaturas se generan en el teléfono y se suben con el mismo cliente S3 (ningún servicio nuevo); el borrado en S3 es `DeleteObjects` con permisos IAM opcionales y acotados. Análisis de alternativas (incluidas Lambda/Object Lambda, descartadas) en [cloud-previews.md](cloud-previews.md).
 - **Dos borrados, dos controladores:** `CloudDeletionController` solo habla con S3 y `LocalDeletionController` solo asienta lo que Android ya borró. Ninguno invoca al otro; la UI (`DeleteViewModel`) los ofrece como opciones separadas.
+- **Estimación de costes sin peticiones nuevas:** el listado `ListObjectsV2` que ya hacen el respaldo y la pestaña S3 alimenta también un inventario (por clase de almacenamiento) que `RemoteCatalog` guarda en DataStore; la pantalla solo lo lee y lo valora con `CostEstimator`. Los precios son una tabla local generada con `tools/update_s3_prices.py` desde la API oficial de listas de precios de AWS. Detalle en [cost-estimate.md](cost-estimate.md).
 - **Sin DI framework:** `AppContainer` es un grafo manual. Menos dependencias, arranque más simple.
 
 ## Dependencias (verificadas)

@@ -57,6 +57,18 @@ Se aplicó `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, estados de carga 
 - **Visor de fotos de S3.** Mismo lienzo inmersivo que el visor local. Una etiqueta dice qué se está viendo («Vista previa · no es el original», «Miniatura incrustada · muy baja resolución», «Sin vista previa»); los estados de carga, sin vista previa y error ocupan el lugar de la foto, con su acción (*Restaurar (tamaño)*, *Reintentar*).
 - **Componentes nuevos:** `DeleteHost` (hoja, diálogos, progreso y resultado compartidos por Galería, Álbumes, visor y S3), `ZoomableBox` (gesto de zoom compartido), `RemoteThumb`, `RemoteDetailSheet`, `CloudViewerScreen`.
 
+## Panel de costes estimados
+
+Ajustes → Almacenamiento y costes (`StorageCostScreen`). Misma estructura que el resto de Ajustes (`SettingsScaffold`, `SettingsGroup`, `StatusBanner`, `SectionHeader`).
+
+- **Lo primero es el aviso:** «Es una estimación, no tu factura», con acceso a AWS Billing. No se puede llegar a una cifra sin verlo.
+- **Tarjeta principal:** el importe mensual con `displaySmall`, el nivel de confianza (icono + palabra: *alta*, *media*, *baja*) y una línea que separa lo medido de las suposiciones. Si no hay datos suficientes se dice «No disponible» y por qué, nunca una cifra a medias.
+- **Etiquetas de origen en cada cifra:** *Medido* (sale del bucket), *Estimado* (regla con margen conocido) y *Suposición* (resaltada en ámbar). Icono + palabra, nunca solo color.
+- **Bloques:** frescura (inventario y precios con su antigüedad y el botón «Actualizar inventario» con lo que cuesta), uso medido, desglose mensual por clase, solicitudes del mes («lo que se sabe», fuera del total), «Qué no incluye» (solo lo que aplica a tu bucket) y confianza con sus motivos.
+- **Ayuda en contexto:** el icono de ayuda de la tarjeta abre una hoja inferior con la metodología en lenguaje llano.
+- **Estados:** sin S3, sin inventario, calculando, otro bucket, vacío, sin credenciales (se conserva lo último), error al actualizar (con «Reintentar» o «Ir a credenciales»), inventario o precios antiguos, cambios pendientes, región o clase sin precio.
+- **Importes pequeños:** nunca se muestra «US$ 0,00» para algo que no es cero (se añaden cifras: «US$ 0,0004»); en cifras secundarias, «menos de US$ 0,01».
+
 ## Accesibilidad y movimiento
 
 - Objetivos táctiles de 48 dp; cada celda de la cuadrícula expone nombre, tipo y estado de respaldo, y su estado de selección.

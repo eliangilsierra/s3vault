@@ -145,6 +145,6 @@ La app no crea infraestructura ni costes por sí misma, pero **tu cuenta paga** 
 | Versioning | Solo si **tú** lo activas; entonces cada sobrescritura/versión se factura. |
 | Multipart incompleto | No aplica: esta versión no usa multipart. Aun así puedes añadir una regla de ciclo de vida que aborte cargas incompletas tras 7 días. |
 
-Estimación de las vistas previas (≈ 0,02 $/mes para 10 000 fotos): [cloud-previews.md](cloud-previews.md#estimación-de-costes-recurrentes).
+La app calcula una **estimación** de estos costes en **Ajustes → Almacenamiento y costes** (no es tu factura; metodología, precios y límites en [cost-estimate.md](cost-estimate.md)). Estimación de las vistas previas (≈ 0,02 $/mes para 10 000 fotos): [cloud-previews.md](cloud-previews.md#estimación-de-costes-recurrentes).
 
 Evita costes innecesarios: la app no vuelve a subir lo ya respaldado (índice local + hash + deduplicación por contenido), no sondea la conexión sin trabajo pendiente y permite «solo Wi-Fi» y excluir vídeos. Considera clases de almacenamiento o reglas de ciclo de vida de S3 si el volumen crece. **No hay garantía de gratuidad** (la capa gratuita de AWS es limitada y temporal).

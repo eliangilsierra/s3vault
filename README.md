@@ -10,6 +10,7 @@ La aplicación se comunica directamente con la API de Amazon S3 mediante credenc
 - **Respaldo en S3.** Manual o automático, con cola persistente, reintentos con retroceso exponencial, pausa y cancelación, restricción a redes no medidas (Wi-Fi), exclusión opcional de vídeos y concurrencia configurable. Se ejecuta con WorkManager y no requiere un servicio en primer plano.
 - **Integridad verificada.** Cada subida envía una suma SHA-256 que S3 valida, y un archivo solo se marca como respaldado tras comprobar con `HEAD` su tamaño y su suma. El ETag nunca se trata como MD5.
 - **Biblioteca remota.** El catálogo se deriva del listado de objetos, sin manifiesto. La restauración se reanuda con `Range`, se verifica contra la suma del contenido y se publica en MediaStore sin sobrescribir archivos existentes.
+- **Costes estimados.** En Ajustes → Almacenamiento y costes: objetos y datos de tu bucket por clase de almacenamiento, un coste mensual aproximado con precios oficiales de lista, desglose, confianza y límites, y cada cifra etiquetada como medida, estimada o suposición. Es una estimación, no tu factura; no añade peticiones a S3 ni permisos IAM. Ver [docs/cost-estimate.md](docs/cost-estimate.md).
 - **Dos métodos de autenticación.** Credenciales temporales de STS (recomendado) o claves estáticas de un usuario IAM dedicado. Los secretos se cifran con una clave de Android Keystore.
 - **Ver fotos de S3 sin descargarlas.** Al respaldar se sube una miniatura de ~60 KB; la pestaña S3 muestra miniaturas y un visor con zoom que dice honestamente que es una vista previa. Sin miniatura se intenta la incrustada en el JPEG con una lectura `Range`; el original solo se descarga con *Restaurar*. Alternativas y costes en [docs/cloud-previews.md](docs/cloud-previews.md).
 - **Borrado explícito y separado.** «Eliminar del dispositivo» (diálogo del sistema Android) y «Eliminar de S3» (solo con el permiso IAM que tú actives) son acciones distintas, cada una con su confirmación; nunca se borran ambas copias de un solo paso. Quitar una foto de un álbum, cerrar sesión o desinstalar nunca toca S3.
@@ -94,6 +95,7 @@ S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamien
 | [docs/aws-setup.md](docs/aws-setup.md) | Bucket, región, prefijo, identidad IAM, credenciales y costes. |
 | [docs/iam-policy.md](docs/iam-policy.md) | Políticas mínimas de identidad y de bucket. |
 | [docs/authentication.md](docs/authentication.md) | Credenciales temporales: opciones evaluadas y comportamiento ante la caducidad. |
+| [docs/cost-estimate.md](docs/cost-estimate.md) | Estimación de costes: metodología, fuente y fecha de los precios, confianza, permisos y límites. |
 | [docs/cloud-previews.md](docs/cloud-previews.md) | Vista previa sin descargar y borrado: alternativas, coste, límites y reglas de seguridad. |
 | [docs/security.md](docs/security.md) | Modelo de amenazas y tratamiento de los datos. |
 | [docs/design-system.md](docs/design-system.md) | Dirección visual, tokens, componentes y accesibilidad. |
