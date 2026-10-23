@@ -10,7 +10,10 @@ import androidx.core.content.ContextCompat
 import com.s3vault.app.auth.CredentialsRepository
 import com.s3vault.app.data.local.AppDatabase
 import com.s3vault.app.data.local.MediaIndexer
+import com.s3vault.app.data.local.ExifThumbnailReader
+import com.s3vault.app.data.local.MediaStoreGateway
 import com.s3vault.app.data.local.MediaStoreSource
+import com.s3vault.app.data.local.MediaStoreThumbnailMaker
 import com.s3vault.app.data.remote.S3RemoteStorage
 import com.s3vault.app.domain.PermissionReport
 import com.s3vault.app.domain.RemoteKeys
@@ -18,8 +21,12 @@ import com.s3vault.app.domain.S3Config
 import com.s3vault.app.security.KeystoreSecretStore
 import com.s3vault.app.settings.AppSettings
 import com.s3vault.app.sync.AlbumController
+import com.s3vault.app.sync.AlbumImporter
 import com.s3vault.app.sync.BackupController
 import com.s3vault.app.sync.BackupEngine
+import com.s3vault.app.sync.CloudDeletionController
+import com.s3vault.app.sync.LocalDeletionController
+import com.s3vault.app.sync.RemotePreviewRepository
 import com.s3vault.app.sync.EventLog
 import com.s3vault.app.sync.LibraryRepository
 import com.s3vault.app.sync.MediaAccess
@@ -40,6 +47,7 @@ import java.io.OutputStream
 
 /** Manual dependency graph (no DI framework: the app is small enough that it would only add weight). */
 class AppContainer(private val context: Context) {
+    val appContext: Context get() = context
     val db: AppDatabase by lazy { AppDatabase.create(context) }
     val settings = AppSettings(context)
     val credentials: CredentialsRepository by lazy { CredentialsRepository(KeystoreSecretStore(context)) }
@@ -54,16 +62,31 @@ class AppContainer(private val context: Context) {
     val catalog by lazy { RemoteCatalog(db) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
+    val albumImporter by lazy { AlbumImporter(db, remoteProvider) }
 
-    val remoteProvider: RemoteContextProvider = CachingRemoteProvider(settings, credentials)
+    /** Test-only (like [S3RemoteStorage]'s own parameter): points the app's S3 client at a local mock server. Never set in production. */
+    @androidx.annotation.VisibleForTesting
+    var endpointOverride: String? = null
+
+    val remoteProvider: RemoteContextProvider = CachingRemoteProvider(settings, credentials) { endpointOverride }
 
     val remoteLibrary by lazy { RemoteLibraryController(db, remoteProvider, catalog, scheduler, settings) }
+
+    /** Previews of S3 objects, cached under cacheDir (the system may clear it; it only costs a few KB to refill). */
+    val previews by lazy { RemotePreviewRepository(File(context.cacheDir, "remote-previews"), remoteProvider, ExifThumbnailReader()) }
+
+    /** Two separate, explicit deletions: S3 objects, and the settling of files Android removed from the device. */
+    val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider) { previews.evict(it) } }
+    val mediaGateway by lazy { MediaStoreGateway(context) }
+    val localDeletion by lazy { LocalDeletionController(db, mediaGateway) }
 
     val backupEngine by lazy {
         BackupEngine(
             db = db, remote = remoteProvider, credentials = credentials, reader = mediaSource,
             progress = progress, events = events, catalog = catalog,
             onTransferSuccess = { settings.markTransferSuccess(it) },
+            thumbnails = MediaStoreThumbnailMaker(context),
+            previewsEnabled = { settings.currentBackup().cloudPreviews },
         )
     }
 
@@ -95,17 +118,21 @@ class AppContainer(private val context: Context) {
 private class CachingRemoteProvider(
     private val settings: AppSettings,
     private val credentials: CredentialsRepository,
+    private val endpoint: () -> String?,
 ) : RemoteContextProvider {
     private val mutex = Mutex()
     private var cachedConfig: S3Config? = null
+    private var cachedEndpoint: String? = null
     private var cached: RemoteContext? = null
 
     override suspend fun get(): RemoteContext? = mutex.withLock {
         val config = settings.currentS3Config() ?: return null
-        if (config != cachedConfig) {
+        val ep = endpoint()
+        if (config != cachedConfig || ep != cachedEndpoint) {
             (cached?.storage as? S3RemoteStorage)?.close()
-            cached = RemoteContext(S3RemoteStorage(config, credentials), RemoteKeys(config.prefix))
+            cached = RemoteContext(S3RemoteStorage(config, credentials, ep), RemoteKeys(config.prefix))
             cachedConfig = config
+            cachedEndpoint = ep
         }
         cached
     }

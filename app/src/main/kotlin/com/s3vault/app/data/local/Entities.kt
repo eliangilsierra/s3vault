@@ -49,6 +49,13 @@ data class MediaItemEntity(
     val lastErrorPermanent: Boolean = false,
     val attempts: Int = 0,
     val queuedAtMs: Long? = null,
+    /** True once a preview of the backed-up version exists in S3 (see RemoteKeys.thumbnailKey). Reset on every new version. */
+    val thumbnailUploaded: Boolean = false,
+    /**
+     * Set when the user deleted this photo's S3 copy on purpose while keeping the local file. Automatic backup then
+     * leaves it alone instead of silently uploading it again; selecting it and choosing "Respaldar" clears the flag.
+     */
+    val backupExcluded: Boolean = false,
 ) {
     fun hashIsValid(): Boolean =
         contentSha256 != null && hashSizeBytes == sizeBytes && hashDateModifiedSec == dateModifiedSec

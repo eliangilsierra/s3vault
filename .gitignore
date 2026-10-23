@@ -11,3 +11,4 @@
 *.keystore
 *.jks
 .claude/settings.local.json
+/keystore.properties

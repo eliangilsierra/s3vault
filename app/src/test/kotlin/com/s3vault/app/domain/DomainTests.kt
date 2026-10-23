@@ -136,3 +136,49 @@ class SyncStateMachineTest {
         assertTrue(SyncStateMachine.canTransition(SyncState.RESTORING, SyncState.REMOTE_ONLY))
     }
 }
+
+class PermissionReportTest {
+    private fun report(vararg c: Pair<Boolean, RemoteErrorKind?>) =
+        PermissionReport(c.mapIndexed { i, (ok, e) -> PermissionCheck("op$i", ok, e) })
+
+    @Test fun `missing permissions are not a blocking error`() {
+        val r = report(true to null, false to RemoteErrorKind.ACCESS_DENIED, false to null)
+        org.junit.Assert.assertNull(r.blockingError)
+    }
+
+    @Test fun `a wrong region is reported instead of missing permissions`() {
+        val r = report(false to RemoteErrorKind.WRONG_REGION, false to RemoteErrorKind.WRONG_REGION, false to null)
+        org.junit.Assert.assertEquals(RemoteErrorKind.WRONG_REGION, r.blockingError)
+    }
+
+    @Test fun `a fully allowed report has no blocking error`() {
+        org.junit.Assert.assertNull(report(true to null, true to null).blockingError)
+    }
+}
+
+class ThumbnailKeysTest {
+    private val version = "b".repeat(64)
+
+    @Test fun `previews live outside photos, keyed by content`() {
+        val keys = RemoteKeys("mi/prefijo")
+        val k = keys.thumbnailKey(version)
+        assertEquals("mi/prefijo/.s3vault/thumbs/$version.jpg", k)
+        assertTrue(keys.isThumbnailKey(k))
+        assertFalse("a preview is never a photo", keys.isPhotoKey(k))
+        assertNull(keys.parse(k))
+    }
+
+    @Test fun `without a prefix previews sit at the root of the vault folder`() {
+        assertEquals(".s3vault/thumbs/$version.jpg", RemoteKeys("").thumbnailKey(version))
+    }
+
+    @Test fun `only well formed preview keys are accepted`() {
+        val keys = RemoteKeys("p")
+        assertFalse(keys.isThumbnailKey("p/.s3vault/thumbs/short.jpg"))
+        assertFalse(keys.isThumbnailKey("p/.s3vault/thumbs/$version.png"))
+        assertFalse(keys.isThumbnailKey("p/.s3vault/albums.json"))
+        assertFalse(keys.isThumbnailKey("q/.s3vault/thumbs/$version.jpg"))
+        assertFalse(keys.isThumbnailKey("p/.s3vault/thumbs/../$version.jpg"))
+        assertThrows(IllegalArgumentException::class.java) { keys.thumbnailKey("nothex") }
+    }
+}

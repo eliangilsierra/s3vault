@@ -9,8 +9,14 @@ import androidx.room.Update
 import com.s3vault.app.domain.SyncState
 import kotlinx.coroutines.flow.Flow
 
+data class HashedItem(val mediaStoreId: Long, val contentSha256: String?, val remoteVersionId: String?)
+
 @Dao
 interface MediaDao {
+    /** Local files whose content is known (hashed before an upload, or linked to a remote version). */
+    @Query("SELECT mediaStoreId, contentSha256, remoteVersionId FROM media_items WHERE present = 1 AND (contentSha256 IS NOT NULL OR remoteVersionId IS NOT NULL)")
+    suspend fun hashedItems(): List<HashedItem>
+
     @Query("SELECT * FROM media_items WHERE present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE') ORDER BY dateTakenMs DESC, mediaStoreId DESC")
     fun observeGallery(includeVideos: Boolean): Flow<List<MediaItemEntity>>
 
@@ -50,7 +56,8 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE syncState = 'QUEUED' AND present = 1 AND mediaStoreId NOT IN (:excluded) ORDER BY queuedAtMs ASC, mediaStoreId ASC LIMIT :limit")
     suspend fun nextQueuedExcluding(excluded: List<Long>, limit: Int): List<MediaItemEntity>
 
-    @Query("SELECT remoteKey FROM media_items WHERE remoteKey IS NOT NULL")
+    /** S3 objects that still have their file on this device (rows whose file is gone only point to S3). */
+    @Query("SELECT remoteKey FROM media_items WHERE remoteKey IS NOT NULL AND present = 1")
     fun observeBackedUpKeys(): Flow<List<String>>
 
     @Query("SELECT COUNT(*) FROM media_items WHERE contentSha256 = :sha AND present = 1")
@@ -59,7 +66,7 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media_items WHERE syncState = 'QUEUED' AND present = 1")
     suspend fun queuedCount(): Int
 
-    @Query("SELECT * FROM media_items WHERE syncState = 'LOCAL_ONLY' AND present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE')")
+    @Query("SELECT * FROM media_items WHERE syncState = 'LOCAL_ONLY' AND present = 1 AND backupExcluded = 0 AND (:includeVideos = 1 OR kind = 'IMAGE')")
     suspend fun pendingLocalOnly(includeVideos: Boolean): List<MediaItemEntity>
 
     @Query("SELECT * FROM media_items WHERE syncState = 'FAILED' AND present = 1")
@@ -84,13 +91,50 @@ interface MediaDao {
 
     @Query(
         "UPDATE media_items SET syncState = 'BACKED_UP', remoteKey = :key, remoteVersionId = :version, lastBackupAtMs = :nowMs, " +
-            "backedUpSizeBytes = :size, backedUpDateModifiedSec = :mtime, lastError = NULL, lastErrorPermanent = 0, attempts = 0, queuedAtMs = NULL " +
+            "backedUpSizeBytes = :size, backedUpDateModifiedSec = :mtime, lastError = NULL, lastErrorPermanent = 0, attempts = 0, queuedAtMs = NULL, " +
+            "thumbnailUploaded = 0, backupExcluded = 0 " +
             "WHERE mediaStoreId = :id AND syncState = 'VERIFYING'",
     )
     suspend fun markBackedUp(id: Long, key: String, version: String, nowMs: Long, size: Long, mtime: Long): Int
 
-    @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0 WHERE mediaStoreId = :id AND syncState IN ('LOCAL_ONLY', 'FAILED')")
+    @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0, backupExcluded = 0 WHERE mediaStoreId = :id AND syncState IN ('LOCAL_ONLY', 'FAILED')")
     suspend fun enqueue(id: Long, nowMs: Long): Int
+
+    @Query("UPDATE media_items SET thumbnailUploaded = 1 WHERE mediaStoreId = :id AND remoteVersionId = :versionId")
+    suspend fun markThumbnailUploaded(id: Long, versionId: String)
+
+    /** Backed-up files on this device whose S3 preview has not been created yet (older backups, or a failed preview upload). */
+    @Query(
+        "SELECT * FROM media_items WHERE syncState = 'BACKED_UP' AND present = 1 AND thumbnailUploaded = 0 " +
+            "AND remoteVersionId IS NOT NULL ORDER BY dateTakenMs DESC LIMIT :limit",
+    )
+    suspend fun thumbnailBacklog(limit: Int): List<MediaItemEntity>
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE syncState = 'BACKED_UP' AND present = 1 AND thumbnailUploaded = 0 AND remoteVersionId IS NOT NULL")
+    fun observeThumbnailBacklog(): Flow<Int>
+
+    @Query("SELECT * FROM media_items WHERE remoteKey IN (:keys)")
+    suspend fun withRemoteKeys(keys: List<String>): List<MediaItemEntity>
+
+    /**
+     * The S3 copy of these files was deleted on purpose: forget the link, flag them so automatic backup does not
+     * upload them again, and show them as "only on this device". In-flight rows keep their state (a worker owns them).
+     */
+    @Query(
+        "UPDATE media_items SET remoteKey = NULL, remoteVersionId = NULL, lastBackupAtMs = NULL, backedUpSizeBytes = NULL, " +
+            "backedUpDateModifiedSec = NULL, thumbnailUploaded = 0, backupExcluded = 1, lastError = NULL, lastErrorPermanent = 0, attempts = 0, " +
+            "syncState = CASE WHEN syncState IN ('QUEUED', 'UPLOADING', 'VERIFYING') THEN syncState ELSE 'LOCAL_ONLY' END " +
+            "WHERE present = 1 AND remoteKey IN (:keys)",
+    )
+    suspend fun detachRemote(keys: List<String>): Int
+
+    /** Rows that existed only as a pointer to an S3 copy (the file is gone from the device). */
+    @Query("SELECT mediaStoreId FROM media_items WHERE present = 0 AND remoteKey IN (:keys)")
+    suspend fun orphanIdsOfRemoteKeys(keys: List<String>): List<Long>
+
+    /** Files that left the device through a confirmed deletion: keep a pointer to the S3 copy, if there is one. */
+    @Query("UPDATE media_items SET present = 0, syncState = 'REMOTE_ONLY', queuedAtMs = NULL WHERE mediaStoreId IN (:ids) AND remoteKey IS NOT NULL AND syncState NOT IN ('UPLOADING', 'VERIFYING')")
+    suspend fun markGoneKeepingRemote(ids: List<Long>): Int
 
     /** Process-restart recovery: nothing can be mid-transfer when no worker is running. */
     @Query("UPDATE media_items SET syncState = 'QUEUED' WHERE syncState IN ('UPLOADING', 'VERIFYING')")
@@ -113,6 +157,13 @@ interface RemoteDao {
 
     @Query("SELECT * FROM remote_objects")
     suspend fun getAll(): List<RemoteObjectEntity>
+
+    @Query("SELECT * FROM remote_objects WHERE key IN (:keys)")
+    suspend fun getByKeys(keys: List<String>): List<RemoteObjectEntity>
+
+    /** Versions (content hashes) that some object outside [excludedKeys] still uses, so their shared preview must stay. */
+    @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds) AND key NOT IN (:excludedKeys)")
+    suspend fun versionsStillUsed(versionIds: List<String>, excludedKeys: List<String>): List<String>
 
     @Query("SELECT * FROM remote_objects WHERE versionId = :versionId AND sizeBytes = :size LIMIT 1")
     suspend fun findByContent(versionId: String, size: Long): RemoteObjectEntity?
@@ -158,6 +209,12 @@ interface AlbumDao {
             "WHERE ai.albumId = :albumId AND m.present = 1 ORDER BY m.dateTakenMs DESC",
     )
     fun observeAlbumMedia(albumId: Long): Flow<List<MediaItemEntity>>
+
+    @Query("SELECT * FROM albums")
+    suspend fun all(): List<AlbumEntity>
+
+    @Query("SELECT mediaStoreId FROM album_items WHERE albumId = :albumId")
+    suspend fun memberIds(albumId: Long): List<Long>
 
     @Query("SELECT albumId FROM album_items WHERE mediaStoreId = :mediaId")
     suspend fun albumsOf(mediaId: Long): List<Long>

@@ -11,7 +11,8 @@ La aplicación se comunica directamente con la API de Amazon S3 mediante credenc
 - **Integridad verificada.** Cada subida envía una suma SHA-256 que S3 valida, y un archivo solo se marca como respaldado tras comprobar con `HEAD` su tamaño y su suma. El ETag nunca se trata como MD5.
 - **Biblioteca remota.** El catálogo se deriva del listado de objetos, sin manifiesto. La restauración se reanuda con `Range`, se verifica contra la suma del contenido y se publica en MediaStore sin sobrescribir archivos existentes.
 - **Dos métodos de autenticación.** Credenciales temporales de STS (recomendado) o claves estáticas de un usuario IAM dedicado. Los secretos se cifran con una clave de Android Keystore.
-- **Sin borrado remoto.** Eliminar una foto del dispositivo, quitarla de un álbum, cerrar sesión o desinstalar la aplicación nunca elimina objetos de S3.
+- **Ver fotos de S3 sin descargarlas.** Al respaldar se sube una miniatura de ~60 KB; la pestaña S3 muestra miniaturas y un visor con zoom que dice honestamente que es una vista previa. Sin miniatura se intenta la incrustada en el JPEG con una lectura `Range`; el original solo se descarga con *Restaurar*. Alternativas y costes en [docs/cloud-previews.md](docs/cloud-previews.md).
+- **Borrado explícito y separado.** «Eliminar del dispositivo» (diálogo del sistema Android) y «Eliminar de S3» (solo con el permiso IAM que tú actives) son acciones distintas, cada una con su confirmación; nunca se borran ambas copias de un solo paso. Quitar una foto de un álbum, cerrar sesión o desinstalar nunca toca S3.
 
 ## Cómo funciona
 
@@ -76,12 +77,13 @@ El modelo de amenazas completo está en [docs/security.md](docs/security.md).
 - Solo se admite Amazon S3; no hay soporte para otros proveedores ni para endpoints compatibles con S3.
 - Las credenciales temporales **no se renuevan automáticamente**. La renovación requiere un proveedor de identidad externo; [docs/authentication.md](docs/authentication.md) describe las opciones evaluadas. Al caducar, la cola se conserva y se reanuda al introducir credenciales nuevas.
 - No se utiliza carga multiparte: los archivos de más de 4 GiB se rechazan con un mensaje explícito.
-- No existe borrado remoto.
+- El borrado en S3 está **desactivado por defecto** (la política IAM recomendada lo prohíbe); se activa a propósito, ver [docs/iam-policy.md](docs/iam-policy.md#permitir-borrar-desde-la-app-opcional).
+- Las fotos de S3 sin miniatura (respaldadas antes de esta función, ya borradas del teléfono y que no son un JPEG con miniatura EXIF) solo se pueden ver restaurándolas.
 - La interfaz está disponible únicamente en español.
 
 ## Costes
 
-S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamiento, solicitudes `PUT`, `GET` y `LIST`, y transferencia de salida durante las restauraciones. Los detalles están en [docs/aws-setup.md](docs/aws-setup.md#costes).
+S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamiento, solicitudes `PUT`, `GET` y `LIST`, y transferencia de salida durante las restauraciones. Las vistas previas añaden ≈ 0,02 $/mes por cada 10 000 fotos. Los detalles están en [docs/aws-setup.md](docs/aws-setup.md#costes).
 
 ## Documentación
 
@@ -92,6 +94,7 @@ S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamien
 | [docs/aws-setup.md](docs/aws-setup.md) | Bucket, región, prefijo, identidad IAM, credenciales y costes. |
 | [docs/iam-policy.md](docs/iam-policy.md) | Políticas mínimas de identidad y de bucket. |
 | [docs/authentication.md](docs/authentication.md) | Credenciales temporales: opciones evaluadas y comportamiento ante la caducidad. |
+| [docs/cloud-previews.md](docs/cloud-previews.md) | Vista previa sin descargar y borrado: alternativas, coste, límites y reglas de seguridad. |
 | [docs/security.md](docs/security.md) | Modelo de amenazas y tratamiento de los datos. |
 | [docs/design-system.md](docs/design-system.md) | Dirección visual, tokens, componentes y accesibilidad. |
 | [docs/testing.md](docs/testing.md) | Estrategia y cobertura de pruebas. |

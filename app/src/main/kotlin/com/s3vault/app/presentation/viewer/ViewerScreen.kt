@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -54,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -79,6 +81,9 @@ import coil3.size.Size
 import com.s3vault.app.domain.MediaItem
 import com.s3vault.app.domain.MediaKind
 import com.s3vault.app.presentation.SyncPill
+import com.s3vault.app.presentation.delete.DeleteHost
+import com.s3vault.app.presentation.delete.DeleteViewModel
+import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.formatBytes
 import com.s3vault.app.presentation.formatDateTime
 import com.s3vault.app.presentation.openVideo
@@ -104,6 +109,8 @@ fun ViewerScreen(
     startId: Long,
     onBack: () -> Unit,
     onBackup: suspend (MediaItem) -> String,
+    deleteVm: DeleteViewModel? = null,
+    onOpenCredentials: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -116,6 +123,12 @@ fun ViewerScreen(
     var info by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val current = items.getOrNull(pager.currentPage)
+
+    // The last photo was deleted from here: nothing left to show.
+    var hadItems by remember { mutableStateOf(false) }
+    LaunchedEffect(items.size) {
+        if (items.isNotEmpty()) hadItems = true else if (hadItems) onBack()
+    }
 
     // Immersive viewing: light system-bar icons on black, bars hidden together with the controls.
     val controller = remember(view) { (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view) } }
@@ -144,7 +157,7 @@ fun ViewerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pager, userScrollEnabled = !zoomed, beyondViewportPageCount = 1, modifier = Modifier.fillMaxSize()) { page ->
-            val item = items[page]
+            val item = items.getOrNull(page) ?: return@HorizontalPager
             ZoomableImage(
                 item = item,
                 active = page == pager.currentPage,
@@ -189,6 +202,7 @@ fun ViewerScreen(
                         }
                         ViewerAction(Icons.Filled.Share, "Compartir") { shareMedia(ctx, listOf(item)) }
                         ViewerAction(Icons.Filled.Info, "Detalles") { info = true }
+                        if (deleteVm != null) ViewerAction(Icons.Filled.Delete, "Eliminar") { deleteVm.request(listOf(item.toDeleteEntry())) }
                     }
                 }
             }
@@ -196,6 +210,8 @@ fun ViewerScreen(
 
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 112.dp))
     }
+
+    if (deleteVm != null) DeleteHost(deleteVm, snackbar, onOpenCredentials = onOpenCredentials)
 
     if (info && current != null) {
         ModalBottomSheet(onDismissRequest = { info = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -210,6 +226,10 @@ fun ViewerScreen(
                 LabeledValue("Tamaño", formatBytes(current.sizeBytes))
                 if (current.width > 0) LabeledValue("Dimensiones", "${current.width} × ${current.height} px")
                 LabeledValue("Carpeta", current.folderName.ifBlank { "—" })
+                LabeledValue(
+                    "Copias",
+                    if (current.remoteKey != null) "En este dispositivo y en Amazon S3" else "Solo en este dispositivo",
+                )
                 current.lastBackupAtMs?.let { LabeledValue("Último respaldo", formatDateTime(it)) }
                 current.lastError?.let {
                     Column {
@@ -223,10 +243,11 @@ fun ViewerScreen(
 }
 
 @Composable
-private fun ViewerAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+internal fun ViewerAction(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Column(
         Modifier.widthIn(min = 80.dp).heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
-            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = Space.m, vertical = Space.s),
+            .alpha(if (enabled) 1f else 0.45f)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = Space.m, vertical = Space.s),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -237,10 +258,33 @@ private fun ViewerAction(icon: ImageVector, label: String, onClick: () -> Unit) 
 
 @Composable
 private fun ZoomableImage(item: MediaItem, active: Boolean, onZoomChanged: (Boolean) -> Unit, onTap: () -> Unit) {
+    val ctx = LocalContext.current
+    ZoomableBox(active = active, onZoomChanged = onZoomChanged, onTap = onTap) {
+        AsyncImage(
+            // Capped decode size: sharp enough to zoom, never the full-resolution original in memory.
+            model = ImageRequest.Builder(ctx).data(item.uri).size(Size(2048, 2048)).build(),
+            contentDescription = item.displayName,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (item.kind == MediaKind.VIDEO) {
+            Box(
+                Modifier.size(72.dp).clip(CircleShape).background(PhotoOverlay.scrim),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Filled.PlayArrow, "Reproducir vídeo", tint = PhotoOverlay.onScrim, modifier = Modifier.size(44.dp)) }
+        }
+    }
+}
+
+/**
+ * Pinch zoom, pan and double-tap zoom around any content. One finger only pages the pager until the content is
+ * zoomed in; [onTap] is a single tap (toggle controls), [onZoomChanged] lets the pager lock itself while zoomed.
+ */
+@Composable
+fun ZoomableBox(active: Boolean, onZoomChanged: (Boolean) -> Unit, onTap: () -> Unit, content: @Composable () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var box by remember { mutableStateOf(IntSize.Zero) }
-    val ctx = LocalContext.current
 
     // Reset when the page is no longer the visible one.
     if (!active && (scale != 1f || offset != Offset.Zero)) { scale = 1f; offset = Offset.Zero }
@@ -285,19 +329,5 @@ private fun ZoomableImage(item: MediaItem, active: Boolean, onZoomChanged: (Bool
             }
             .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },
         contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            // Capped decode size: sharp enough to zoom, never the full-resolution original in memory.
-            model = ImageRequest.Builder(ctx).data(item.uri).size(Size(2048, 2048)).build(),
-            contentDescription = item.displayName,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (item.kind == MediaKind.VIDEO) {
-            Box(
-                Modifier.size(72.dp).clip(CircleShape).background(PhotoOverlay.scrim),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Filled.PlayArrow, "Reproducir vídeo", tint = PhotoOverlay.onScrim, modifier = Modifier.size(44.dp)) }
-        }
-    }
+    ) { content() }
 }

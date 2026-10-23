@@ -8,6 +8,7 @@ import com.s3vault.app.data.local.MediaIndexer
 import com.s3vault.app.data.local.ScannedMedia
 import com.s3vault.app.domain.AwsCredentials
 import com.s3vault.app.domain.AwsCredentialsProvider
+import com.s3vault.app.domain.DeleteReport
 import com.s3vault.app.domain.LocalFileReader
 import com.s3vault.app.domain.MediaKind
 import com.s3vault.app.domain.PermissionReport
@@ -44,7 +45,7 @@ class FakeCredentials : AwsCredentialsProvider {
     }
 }
 
-/** In-memory S3 stand-in with failure injection. Deliberately has no delete: nothing in the app can call one. */
+/** In-memory S3 stand-in with failure injection. [deleteCalls] records every delete so tests can prove what was (not) deleted. */
 class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
     class Obj(val bytes: ByteArray, val sha256B64: String, val etag: String)
 
@@ -59,6 +60,19 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
     val downloadOffsets = mutableListOf<Long>()
     var corruptDownload = false
     var downloadFailureAfterBytes: Int? = null
+
+    /** Every key passed to delete(), in order, and the size of each request. */
+    val deleteCalls = mutableListOf<List<String>>()
+    val deletedKeys: List<String> get() = deleteCalls.flatten()
+    val deleteKeyFailures = mutableMapOf<String, RemoteErrorKind>()
+    val deleteRequestFailures = ArrayDeque<RemoteException>()
+
+    /** Mimics S3 with a prefix-scoped ListBucket policy: a missing key answers 403 instead of 404. */
+    var missingKeysAnswerForbidden = false
+    val readFailures = ArrayDeque<RemoteException>()
+    val readRequests = mutableListOf<Pair<String, Long?>>()
+    val putThumbnailFailures = ArrayDeque<RemoteException>()
+    var putThumbnailCalls = 0
 
     override suspend fun checkConnection() {}
     override suspend fun testPermissions() = PermissionReport(emptyList())
@@ -87,6 +101,36 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
         objects[request.key] = Obj(bytes, actual, "etag-${objects.size}")
         uploadedKeys += request.key
         return UploadResult("etag", actual)
+    }
+
+    override suspend fun readBytes(key: String, maxBytes: Long?): ByteArray? {
+        require(keys.isWithinPrefix(key))
+        readRequests += key to maxBytes
+        readFailures.removeFirstOrNull()?.let { throw it }
+        val o = objects[key]
+        if (o == null) {
+            if (missingKeysAnswerForbidden) throw RemoteException(RemoteErrorKind.ACCESS_DENIED)
+            return null
+        }
+        return if (maxBytes == null) o.bytes else o.bytes.copyOf(minOf(maxBytes.toInt(), o.bytes.size))
+    }
+
+    override suspend fun putThumbnail(key: String, bytes: ByteArray) {
+        require(keys.isThumbnailKey(key)) { "not a thumbnail key" }
+        putThumbnailCalls++
+        putThumbnailFailures.removeFirstOrNull()?.let { throw it }
+        objects[key] = Obj(bytes, "", "etag-thumb-${objects.size}")
+    }
+
+    override suspend fun delete(keys: List<String>): DeleteReport {
+        require(keys.size <= com.s3vault.app.domain.RemoteStorage.MAX_DELETE_BATCH)
+        keys.forEach { require(this.keys.isWithinPrefix(it)) }
+        deleteCalls += keys
+        deleteRequestFailures.removeFirstOrNull()?.let { throw it }
+        val failed = keys.filter { it in deleteKeyFailures }.associateWith { deleteKeyFailures.getValue(it) }
+        val ok = keys.filter { it !in failed }
+        ok.forEach { objects.remove(it) } // deleting a missing key is a success, as in S3
+        return DeleteReport(ok, failed)
     }
 
     override suspend fun download(key: String, sink: OutputStream, offset: Long, ifMatchEtag: String?, onProgress: (Long) -> Unit): Long {
@@ -151,9 +195,16 @@ class TestEnv(val prefix: String = "mi/prefijo/") {
     val ctx = RemoteContext(remote, keys)
     var provider: RemoteContextProvider = RemoteContextProvider { ctx }
 
-    fun engine(maxAttempts: Int = BackupEngine.DEFAULT_MAX_ATTEMPTS) = BackupEngine(
+    fun engine(
+        maxAttempts: Int = BackupEngine.DEFAULT_MAX_ATTEMPTS,
+        thumbnails: com.s3vault.app.domain.ThumbnailMaker? = null,
+        previewsEnabled: suspend () -> Boolean = { true },
+    ) = BackupEngine(
         db, provider, creds, reader, progress, events, catalog, nowMs = { now }, maxAttempts = maxAttempts,
+        thumbnails = thumbnails, previewsEnabled = previewsEnabled,
     )
+
+    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted)
 
     fun restoreEngine(sink: RestoreSink, partDir: File) =
         RestoreEngine(db, provider, creds, sink, partDir, progress, events)

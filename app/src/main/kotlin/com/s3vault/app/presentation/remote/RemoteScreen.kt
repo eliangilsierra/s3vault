@@ -3,6 +3,7 @@ package com.s3vault.app.presentation.remote
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,18 +19,20 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -57,16 +62,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.s3vault.app.domain.RemoteObject
 import com.s3vault.app.domain.SyncState
+import com.s3vault.app.presentation.RemoteDetail
 import com.s3vault.app.presentation.RemoteViewModel
+import com.s3vault.app.presentation.delete.DeleteHost
+import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.formatBytes
 import com.s3vault.app.presentation.formatDateTime
+import com.s3vault.app.presentation.theme.PhotoOverlay
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.theme.status
 import com.s3vault.app.presentation.theme.technical
 import com.s3vault.app.presentation.ui.AppTopBar
 import com.s3vault.app.presentation.ui.ConfirmDialog
 import com.s3vault.app.presentation.ui.EmptyState
-import com.s3vault.app.presentation.ui.LabeledValue
 import com.s3vault.app.presentation.ui.PrimaryButton
 import com.s3vault.app.presentation.ui.QuietButton
 import com.s3vault.app.presentation.ui.SlimProgress
@@ -76,11 +84,18 @@ import com.s3vault.app.sync.Progress
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun RemoteScreen(vm: RemoteViewModel, onOpenS3Settings: () -> Unit, onOpenSecurity: () -> Unit) {
+fun RemoteScreen(
+    vm: RemoteViewModel,
+    deleteVm: DeleteViewModel,
+    onOpenS3Settings: () -> Unit,
+    onOpenSecurity: () -> Unit,
+    onOpenPhoto: (RemoteObject) -> Unit,
+) {
     val s by vm.state.collectAsStateWithLifecycle()
     val selected by vm.selectedKeys.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val haptics = LocalHapticFeedback.current
     var confirmDuplicates by remember { mutableStateOf<List<RemoteObject>?>(null) }
     val selecting = selected.isNotEmpty()
     BackHandler(enabled = selecting) { vm.clearSelection() }
@@ -91,20 +106,37 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenS3Settings: () -> Unit, onOpenSecuri
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            val chosen = s.items.filter { it.key in selected }
             AppTopBar(
                 title = if (selecting) (if (selected.size == 1) "1 seleccionada" else "${selected.size} seleccionadas") else "Biblioteca en S3",
-                subtitle = if (!selecting && s.items.isNotEmpty()) (if (s.items.size == 1) "1 objeto" else "${s.items.size} objetos") else null,
+                subtitle = when {
+                    selecting -> chosen.count { it.availableLocally }.let { local ->
+                        if (local == 0) "Solo existen en S3" else "$local también en este dispositivo"
+                    }
+                    s.items.isNotEmpty() -> if (s.items.size == 1) "1 objeto" else "${s.items.size} objetos"
+                    else -> null
+                },
                 containerColor = if (selecting) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.background,
                 navigation = if (selecting) {
                     { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } }
                 } else null,
                 actions = {
                     if (selecting) {
+                        IconButton(onClick = { vm.selectAll(s.items.filter { it.state != SyncState.RESTORING }.map { it.key }) }) {
+                            Icon(Icons.Filled.SelectAll, "Seleccionar todo")
+                        }
                         IconButton(onClick = {
-                            val chosen = s.items.filter { it.key in selected && it.state == SyncState.REMOTE_ONLY }
-                            val dupes = chosen.filter { it.availableLocally }
-                            if (dupes.isNotEmpty()) confirmDuplicates = chosen else vm.restoreSelected()
-                        }) { Icon(Icons.Filled.Download, "Restaurar") }
+                            val toRestore = chosen.filter { it.state == SyncState.REMOTE_ONLY }
+                            val dupes = toRestore.filter { it.availableLocally }
+                            when {
+                                toRestore.isEmpty() -> vm.postMessage("Esas fotos ya se están restaurando.")
+                                dupes.isNotEmpty() -> confirmDuplicates = toRestore
+                                else -> vm.restoreSelected()
+                            }
+                        }) { Icon(Icons.Filled.Download, "Restaurar en este dispositivo") }
+                        IconButton(onClick = { deleteVm.requestCloud(chosen.filter { it.state != SyncState.RESTORING }) }) {
+                            Icon(Icons.Filled.Delete, "Eliminar de S3…", tint = MaterialTheme.colorScheme.error)
+                        }
                     } else {
                         IconButton(onClick = vm::refresh, enabled = s.configured && !s.loading) { Icon(Icons.Filled.Refresh, "Actualizar listado") }
                     }
@@ -145,9 +177,14 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenS3Settings: () -> Unit, onOpenSecuri
                     }
                     items(s.items, key = { it.key }) { obj ->
                         RemoteRow(
-                            obj, obj.key in selected, selecting, downloads[obj.key],
-                            onClick = { if (selecting) vm.toggle(obj.key) else vm.showDetail(obj) },
-                            onLongClick = { if (obj.state == SyncState.REMOTE_ONLY) vm.toggle(obj.key) },
+                            obj, obj.key in selected, selecting, downloads[obj.key], vm,
+                            onClick = { if (selecting) vm.toggle(obj.key) else onOpenPhoto(obj) },
+                            onLongClick = {
+                                if (obj.state != SyncState.RESTORING) {
+                                    if (!selecting) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.toggle(obj.key)
+                                }
+                            },
                             onCancel = { vm.cancelRestore(obj.key) },
                         )
                     }
@@ -167,28 +204,35 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenS3Settings: () -> Unit, onOpenSecuri
         )
     }
 
-    s.detail?.let { d ->
-        ModalBottomSheet(onDismissRequest = vm::dismissDetail, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
-                    .padding(horizontal = Space.screen).padding(bottom = Space.xl),
-                verticalArrangement = Arrangement.spacedBy(Space.m),
-            ) {
-                Text("Metadatos del objeto", style = MaterialTheme.typography.titleLarge)
-                when {
-                    d.error != null -> Text(d.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    d.lines == null -> SlimProgress(null)
-                    else -> d.lines.forEach { (k, v) ->
-                        // Identifiers (keys, checksums) scan better in monospace than as prose.
-                        val identifier = v.length > 28 && ' ' !in v
-                        Column {
-                            Text(k, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(v, style = if (identifier) MaterialTheme.technical else MaterialTheme.typography.bodyMedium)
-                        }
+    s.detail?.let { d -> RemoteDetailSheet(d, vm::dismissDetail) }
+
+    DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenSecurity)
+}
+
+/** Technical metadata of one S3 object (a single HEAD request, made only when the user asks). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RemoteDetailSheet(d: RemoteDetail, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                .padding(horizontal = Space.screen).padding(bottom = Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            Text("Metadatos del objeto", style = MaterialTheme.typography.titleLarge)
+            when {
+                d.error != null -> Text(d.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                d.lines == null -> SlimProgress(null)
+                else -> d.lines.forEach { (k, v) ->
+                    // Identifiers (keys, checksums) scan better in monospace than as prose.
+                    val identifier = v.length > 28 && ' ' !in v
+                    Column {
+                        Text(k, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(v, style = if (identifier) MaterialTheme.technical else MaterialTheme.typography.bodyMedium)
                     }
                 }
-                QuietButton("Cerrar", vm::dismissDetail, Modifier.align(Alignment.End))
             }
+            QuietButton("Cerrar", onDismiss, Modifier.align(Alignment.End))
         }
     }
 }
@@ -198,7 +242,7 @@ private fun RemoteSkeleton() {
     Column(Modifier.fillMaxSize().padding(horizontal = Space.screen, vertical = Space.s), verticalArrangement = Arrangement.spacedBy(Space.l)) {
         repeat(8) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.l), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).skeleton())
+                Box(Modifier.size(ThumbSize).clip(MaterialTheme.shapes.medium).skeleton())
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
                     Box(Modifier.size(width = 180.dp, height = 14.dp).clip(MaterialTheme.shapes.extraSmall).skeleton())
                     Box(Modifier.size(width = 120.dp, height = 12.dp).clip(MaterialTheme.shapes.extraSmall).skeleton())
@@ -208,6 +252,8 @@ private fun RemoteSkeleton() {
     }
 }
 
+private val ThumbSize = 64.dp
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RemoteRow(
@@ -215,6 +261,7 @@ private fun RemoteRow(
     selected: Boolean,
     selecting: Boolean,
     progress: Progress?,
+    vm: RemoteViewModel,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onCancel: () -> Unit,
@@ -230,22 +277,35 @@ private fun RemoteRow(
         obj.availableLocally -> MaterialTheme.status.success
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val primary = MaterialTheme.colorScheme.primary
     Row(
         Modifier.fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Transparent)
             .semantics { this.selected = selected }
-            .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick)
-            .heightIn(min = 72.dp).padding(horizontal = Space.screen, vertical = Space.m),
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = if (selecting) "Alternar selección" else "Ver vista previa",
+                onClick = onClick,
+                onLongClickLabel = "Seleccionar",
+                onLongClick = onLongClick,
+            )
+            .heightIn(min = 80.dp).padding(horizontal = Space.screen, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.l),
     ) {
-        if (selecting && obj.state == SyncState.REMOTE_ONLY) {
-            Checkbox(checked = selected, onCheckedChange = { onClick() })
-        } else {
-            Box(
-                Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainer),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Filled.Image, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Box(Modifier.size(ThumbSize)) {
+            RemoteThumb(
+                obj, vm::loadPreview,
+                Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainer),
+            )
+            if (selecting && obj.state != SyncState.RESTORING) {
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(Space.xs).size(22.dp).clip(CircleShape)
+                        .background(if (selected) primary else PhotoOverlay.scrim)
+                        .border(1.5.dp, if (selected) primary else PhotoOverlay.onScrim, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(14.dp)) }
+            }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(obj.displayName, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

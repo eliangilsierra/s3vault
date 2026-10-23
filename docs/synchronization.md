@@ -94,6 +94,35 @@ Detectado en el escaneo: `BACKED_UP` con `(tamaño, mtime)` distintos de los res
 4. Publica en MediaStore (`Pictures/S3Vault` o `Movies/S3Vault`) con `IS_PENDING`; si el nombre existe, MediaStore crea otro (`nombre (1).jpg`): **nunca se sobrescribe**. Si ya hay copia local del mismo contenido, la interfaz pide confirmación antes.
 5. La foto restaurada aparece en la galería y se enlaza con el objeto por deduplicación de contenido (no se vuelve a subir).
 
+## Miniaturas (vista previa en S3)
+
+Tras verificar un respaldo (o al enlazar contenido que ya estaba en S3) el motor genera una miniatura JPEG de ≤ 720 px con `ContentResolver.loadThumbnail` y la sube a `{prefijo}/.s3vault/thumbs/{versionId}.jpg` con un `PUT`. Es **mejor esfuerzo**: un fallo nunca invalida el respaldo; la fila queda con `thumbnailUploaded = false`.
+
+- `thumbnailUploaded` se pone a `false` en cada versión nueva, así que una foto editada tiene su propia miniatura.
+- *Backfill*: tras una ejecución completa del `BackupWorker`, hasta 300 filas `BACKED_UP` con archivo en el teléfono y sin miniatura se procesan desde la copia local. Se detiene en el primer error que se repetiría para todas (credenciales, permisos, red). Un archivo que no se puede decodificar se marca como hecho para no reintentarlo eternamente.
+- Se puede desactivar en **Ajustes generales → Vistas previas en S3**; en **Respaldo** hay un botón para completarlas a demanda.
+
+## Borrar
+
+```mermaid
+flowchart TD
+  U[Selección] --> C{¿Qué copia?}
+  C -->|Del dispositivo| D1[Confirmación]
+  D1 --> D2[Diálogo del sistema Android]
+  D2 --> D3[Comprobar en MediaStore qué desapareció]
+  D3 --> D4[Room: BACKED_UP → REMOTE_ONLY sin archivo; sin copia en S3 → fila eliminada]
+  C -->|De Amazon S3| S1[Confirmación explícita]
+  S1 --> S2[DeleteObjects de 100 en 100]
+  S2 --> S3[Room tras cada lote: foto local → LOCAL_ONLY marcada; solo-S3 → fila eliminada]
+```
+
+- **Dispositivo:** `MediaStore.createDeleteRequest` (Android 11+) por lotes de 500, o `RecoverableSecurityException` foto a foto (Android 10). El resultado del diálogo no se da por bueno: se comprueba cada URI. Las filas con copia en S3 pasan a `REMOTE_ONLY` (`present = false`, la clave se conserva); las demás se eliminan del índice y de los álbumes.
+- **S3:** solo claves de `photos/` (y sus miniaturas, que se borran después y solo si ningún otro objeto con el mismo contenido las usa). Cada lote se aplica a Room en cuanto S3 lo confirma, así que cancelar o fallar a medias deja el estado coherente. Un `403` por IAM detiene el resto.
+- **No volver a subir:** la foto local cuya copia en S3 se borró queda con `backupExcluded = true`; «Respaldar pendientes» y el respaldo automático la saltan, y elegirla a mano y pulsar «Respaldar» quita la marca.
+- **Metadatos obsoletos:** el listado de S3 es una caché. Si un objeto se borró desde fuera, la vista previa lo detecta (`404` del original) y refresca el listado; borrar un objeto que ya no existe cuenta como correcto (S3 es idempotente).
+
+Reglas completas y costes: [cloud-previews.md](cloud-previews.md).
+
 ## Catálogo remoto sin manifiesto
 
-Se descartó un manifiesto JSON en S3: exigiría resolver escrituras concurrentes desde varios dispositivos, escrituras interrumpidas y recuperación (S3 no tiene *compare-and-swap* simple sin ETags condicionales y bloqueos). Como la clave ya lleva `assetId`/`versionId`/nombre, un `ListObjectsV2` basta. Coste: un `LIST` por 1000 objetos al refrescar; los metadatos extendidos (fecha de captura, nombre exacto) se piden con `HEAD` solo cuando abres el detalle de un objeto. Limitación: sin miniaturas remotas (exigirían descargar el original).
+Se descartó un manifiesto JSON en S3: exigiría resolver escrituras concurrentes desde varios dispositivos, escrituras interrumpidas y recuperación (S3 no tiene *compare-and-swap* simple sin ETags condicionales y bloqueos). Como la clave ya lleva `assetId`/`versionId`/nombre, un `ListObjectsV2` basta. Coste: un `LIST` por 1000 objetos al refrescar; los metadatos extendidos (fecha de captura, nombre exacto) se piden con `HEAD` solo cuando abres el detalle de un objeto. Las miniaturas de esta versión se generan en el teléfono al respaldar (ver arriba) precisamente para no tener que descargar el original.

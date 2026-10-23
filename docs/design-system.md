@@ -46,6 +46,17 @@ Cada estado vacío, de permiso o de error usa `EmptyState` y responde a tres pre
 - **Ajustes y AWS.** Secciones con grupos, formulario dividido en *Destino*, *Método de autenticación* y *Conexión*, términos de AWS explicados en contexto,
   y avisos que reflejan que **la app no renueva sola las credenciales temporales**.
 
+## Selección, vista previa y borrado
+
+Se aplicó `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, estados de carga con esqueletos, error cerca del problema, confirmación de acciones destructivas, color nunca como único indicador) y se descartaron de nuevo los patrones de marketing del generador.
+
+- **Lenguaje visual de las dos ubicaciones.** Un icono de **móvil** significa siempre «este dispositivo» y una **nube** siempre «Amazon S3», en la hoja de elección, en los diálogos y en las insignias. Los textos nombran la ubicación (no «borrar» a secas).
+- **Barra contextual de selección.** Título con el recuento y subtítulo con dónde están las copias («Todas con copia en S3», «2 con copia en S3 · 1 sin copia»). Acciones frecuentes visibles (seleccionar todo, respaldar, eliminar en rojo); las demás en el menú «Más acciones». Retroalimentación háptica al iniciar la selección y marca animada por celda; en la lista de S3 la misma marca sobre la miniatura.
+- **Eliminar = elegir, confirmar, ver el resultado.** Hoja «¿De dónde?» con las dos opciones (la que no aplica aparece desactivada con el motivo), confirmación específica de cada ubicación con el impacto contado (cuántas siguen en la otra ubicación y cuántas se perderían), casilla obligatoria si algo solo existe en S3, diálogo de progreso con «n de m» y «Cancelar» para S3, y resultado en una snackbar o, si hubo fallos, en un diálogo con la causa y «Reintentar».
+- **Errores con salida.** Credenciales caducadas ⇒ «Ir a credenciales»; política IAM sin permiso ⇒ explica que es lo habitual y dónde activarlo; objeto ya inexistente ⇒ el listado se refresca solo.
+- **Visor de fotos de S3.** Mismo lienzo inmersivo que el visor local. Una etiqueta dice qué se está viendo («Vista previa · no es el original», «Miniatura incrustada · muy baja resolución», «Sin vista previa»); los estados de carga, sin vista previa y error ocupan el lugar de la foto, con su acción (*Restaurar (tamaño)*, *Reintentar*).
+- **Componentes nuevos:** `DeleteHost` (hoja, diálogos, progreso y resultado compartidos por Galería, Álbumes, visor y S3), `ZoomableBox` (gesto de zoom compartido), `RemoteThumb`, `RemoteDetailSheet`, `CloudViewerScreen`.
+
 ## Accesibilidad y movimiento
 
 - Objetivos táctiles de 48 dp; cada celda de la cuadrícula expone nombre, tipo y estado de respaldo, y su estado de selección.
