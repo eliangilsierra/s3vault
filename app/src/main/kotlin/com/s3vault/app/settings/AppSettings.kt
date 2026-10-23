@@ -26,6 +26,8 @@ data class BackupSettings(
     val maxConcurrency: Int = 2,
     /** User pressed "Pause": queued work is kept but no worker runs. */
     val paused: Boolean = false,
+    /** Upload a small preview next to every backed-up photo so S3 photos can be previewed without downloading them. */
+    val cloudPreviews: Boolean = true,
 )
 
 data class ConnectionStatus(
@@ -51,6 +53,7 @@ class AppSettings(private val context: Context) {
         val intervalHours = intPreferencesKey("interval_hours")
         val maxConcurrency = intPreferencesKey("max_concurrency")
         val paused = booleanPreferencesKey("paused")
+        val cloudPreviews = booleanPreferencesKey("cloud_previews")
         val theme = stringPreferencesKey("theme")
         val connVerifiedAt = longPreferencesKey("conn_verified_at")
         val connOk = booleanPreferencesKey("conn_ok")
@@ -79,6 +82,7 @@ class AppSettings(private val context: Context) {
             intervalHours = p[K.intervalHours] ?: 6,
             maxConcurrency = (p[K.maxConcurrency] ?: 2).coerceIn(1, 4),
             paused = p[K.paused] ?: false,
+            cloudPreviews = p[K.cloudPreviews] ?: true,
         )
     }
 
@@ -122,6 +126,7 @@ class AppSettings(private val context: Context) {
     suspend fun setIncludeVideos(v: Boolean) = store.edit { it[K.includeVideos] = v }.let { }
     suspend fun setIntervalHours(v: Int) = store.edit { it[K.intervalHours] = v }.let { }
     suspend fun setMaxConcurrency(v: Int) = store.edit { it[K.maxConcurrency] = v.coerceIn(1, 4) }.let { }
+    suspend fun setCloudPreviews(v: Boolean) = store.edit { it[K.cloudPreviews] = v }.let { }
     suspend fun setPaused(v: Boolean) = store.edit { it[K.paused] = v }.let { }
     suspend fun setTheme(v: ThemeMode) = store.edit { it[K.theme] = v.name }.let { }
     suspend fun setNeedsCredentials(v: Boolean) = store.edit { it[K.needsCredentials] = v }.let { }

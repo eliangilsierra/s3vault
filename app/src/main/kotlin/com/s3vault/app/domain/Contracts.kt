@@ -45,7 +45,15 @@ data class PermissionReport(val checks: List<PermissionCheck>) {
         get() = checks.firstOrNull { !it.allowed && it.error != null && it.error != RemoteErrorKind.ACCESS_DENIED }?.error
 }
 
-/** Object access scoped to the configured bucket and prefix. There is deliberately no delete operation. */
+/** Outcome of a batch delete: S3 reports success or failure per key, so one bad key never hides the rest. */
+data class DeleteReport(val deleted: List<String>, val failed: Map<String, RemoteErrorKind>)
+
+/**
+ * Object access scoped to the configured bucket and prefix.
+ *
+ * Deleting is the only destructive operation. It is reachable solely from an explicit, confirmed user action in the
+ * UI (see `CloudDeletionController`) and is limited to photo and thumbnail keys; backup and restore never call it.
+ */
 interface RemoteStorage {
     /** ListObjectsV2 (maxKeys=1) under the configured prefix. Validates bucket, region and credentials. */
     suspend fun checkConnection()
@@ -72,9 +80,42 @@ interface RemoteStorage {
         ifMatchEtag: String? = null,
         onProgress: (Long) -> Unit = {},
     ): Long
+
+    /**
+     * Reads an object (or only its first [maxBytes] bytes, using an HTTP Range request) into memory. Meant for small
+     * objects: thumbnails and the head of a JPEG. Returns null when the object does not exist.
+     */
+    suspend fun readBytes(key: String, maxBytes: Long? = null): ByteArray?
+
+    /** Stores a generated preview. Only keys under the thumbnails folder are accepted. */
+    suspend fun putThumbnail(key: String, bytes: ByteArray)
+
+    /**
+     * Deletes the given photo or thumbnail keys with a single DeleteObjects request (at most [MAX_DELETE_BATCH]).
+     * Deleting a key that is already gone counts as success (S3 deletes are idempotent). Throws [RemoteException] when
+     * the whole request fails (credentials, network...); per-key failures come back in the report.
+     */
+    suspend fun delete(keys: List<String>): DeleteReport
+
+    companion object {
+        const val MAX_DELETE_BATCH = 100
+    }
 }
 
 /** Abstraction over local file access so sync logic can be tested without Android. */
 interface LocalFileReader {
     fun open(uri: String): InputStream
 }
+
+/** Produces the small JPEG that is stored in S3 as the preview of a photo or video. Null when nothing can be decoded. */
+fun interface ThumbnailMaker {
+    suspend fun create(uri: String, kind: MediaKind): ByteArray?
+}
+
+/** Reads the JPEG thumbnail embedded in the EXIF block of an image head (a partial download is enough). */
+fun interface EmbeddedThumbnailReader {
+    fun read(head: ByteArray): ByteArray?
+}
+
+/** Longest edge, in pixels, of the previews stored in S3. */
+const val PREVIEW_MAX_EDGE_PX = 720

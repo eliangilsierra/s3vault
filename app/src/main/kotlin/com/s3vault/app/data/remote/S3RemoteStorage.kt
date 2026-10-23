@@ -3,9 +3,12 @@ package com.s3vault.app.data.remote
 import aws.sdk.kotlin.services.s3.S3Client
 import aws.sdk.kotlin.services.s3.model.ChecksumAlgorithm
 import aws.sdk.kotlin.services.s3.model.ChecksumMode
+import aws.sdk.kotlin.services.s3.model.Delete
+import aws.sdk.kotlin.services.s3.model.DeleteObjectsRequest
 import aws.sdk.kotlin.services.s3.model.GetObjectRequest
 import aws.sdk.kotlin.services.s3.model.HeadObjectRequest
 import aws.sdk.kotlin.services.s3.model.ListObjectsV2Request
+import aws.sdk.kotlin.services.s3.model.ObjectIdentifier
 import aws.sdk.kotlin.services.s3.model.PutObjectRequest
 import aws.sdk.kotlin.services.s3.model.S3Exception
 import aws.smithy.kotlin.runtime.ServiceException
@@ -19,6 +22,7 @@ import aws.smithy.kotlin.runtime.io.source
 import aws.smithy.kotlin.runtime.net.url.Url
 import aws.smithy.kotlin.runtime.time.Instant as SdkInstant
 import com.s3vault.app.domain.AwsCredentialsProvider
+import com.s3vault.app.domain.DeleteReport
 import com.s3vault.app.domain.PermissionCheck
 import com.s3vault.app.domain.PermissionReport
 import com.s3vault.app.domain.RemoteErrorKind
@@ -55,8 +59,8 @@ internal class SdkCredentialsAdapter(private val provider: AwsCredentialsProvide
  * Amazon S3 access through the AWS SDK for Kotlin (official Android support, SigV4 signing done by the SDK,
  * HTTPS only, platform TLS validation).
  *
- * Every key is checked against the configured prefix before use, independently of the UI. No delete operation
- * exists in this class.
+ * Every key is checked against the configured prefix before use, independently of the UI. The only destructive
+ * operation is [delete], restricted to photo and thumbnail keys.
  *
  * [endpointOverride] exists solely for tests against a local mock server; production code never sets it.
  */
@@ -242,6 +246,65 @@ class S3RemoteStorage(
                 written
             }
         }
+    }
+
+    override suspend fun readBytes(key: String, maxBytes: Long?): ByteArray? {
+        checkKey(key)
+        require(maxBytes == null || maxBytes > 0) { "maxBytes must be positive" }
+        return try {
+            guarded(OperationContext.GET) {
+                client.getObject(
+                    GetObjectRequest {
+                        bucket = config.bucket
+                        this.key = key
+                        if (maxBytes != null) range = "bytes=0-${maxBytes - 1}"
+                    },
+                ) { resp -> resp.body?.toByteArray() ?: ByteArray(0) }
+            }
+        } catch (e: RemoteException) {
+            if (e.kind == RemoteErrorKind.OBJECT_NOT_FOUND) null else throw e
+        }
+    }
+
+    override suspend fun putThumbnail(key: String, bytes: ByteArray) {
+        checkKey(key)
+        require(keys.isThumbnailKey(key)) { "Thumbnails are only allowed under the thumbnails folder" }
+        guarded(OperationContext.PUT) {
+            client.putObject(
+                PutObjectRequest {
+                    bucket = config.bucket
+                    this.key = key
+                    body = ByteStream.fromBytes(bytes)
+                    contentType = "image/jpeg"
+                },
+            )
+        }
+    }
+
+    override suspend fun delete(keys: List<String>): DeleteReport {
+        if (keys.isEmpty()) return DeleteReport(emptyList(), emptyMap())
+        require(keys.size <= RemoteStorage.MAX_DELETE_BATCH) { "At most ${RemoteStorage.MAX_DELETE_BATCH} keys per request" }
+        keys.forEach {
+            checkKey(it)
+            require(this.keys.isPhotoKey(it) || this.keys.isThumbnailKey(it)) { "Only photo and thumbnail keys can be deleted" }
+        }
+        val resp = guarded(OperationContext.DELETE) {
+            client.deleteObjects(
+                DeleteObjectsRequest {
+                    bucket = config.bucket
+                    delete = Delete {
+                        objects = keys.map { k -> ObjectIdentifier { key = k } }
+                        quiet = true // only failures are reported back
+                    }
+                },
+            )
+        }
+        val failed = LinkedHashMap<String, RemoteErrorKind>()
+        resp.errors.orEmpty().forEach { err ->
+            val k = err.key ?: return@forEach
+            failed[k] = S3ErrorClassifier.classify(S3ErrorFacts(null, err.code, err.message, null), OperationContext.DELETE).kind
+        }
+        return DeleteReport(keys.filter { it !in failed }, failed)
     }
 
     /** Runs [block] and maps every failure into a [RemoteException] without leaking SDK text. */

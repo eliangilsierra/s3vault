@@ -21,6 +21,23 @@ class RemoteKeys(rawPrefix: String) {
     /** Album membership published by tools/s3vault_import.py. The app only ever reads it. */
     val albumManifestKey: String = "${prefix}.s3vault/albums.json"
 
+    /**
+     * Small JPEG previews generated on the device at backup time, outside `photos/` on purpose: they are not photos
+     * (never listed or restored) and a lifecycle rule scoped to `photos/` leaves them in S3 Standard, where reading
+     * a few KB is cheap and has no retrieval fee or minimum billable size.
+     */
+    val thumbnailsPrefix: String = "${prefix}.s3vault/thumbs/"
+
+    /** One preview per content version (SHA-256), shared by every asset that holds the same bytes. */
+    fun thumbnailKey(versionId: String): String {
+        require(VERSION_ID.matches(versionId)) { "Invalid versionId" }
+        return "$thumbnailsPrefix$versionId.jpg"
+    }
+
+    fun isThumbnailKey(key: String): Boolean =
+        key.startsWith(thumbnailsPrefix) && !key.contains("..") &&
+            THUMBNAIL_NAME.matches(key.removePrefix(thumbnailsPrefix))
+
     fun photoKey(assetId: String, versionId: String, displayName: String): String {
         require(ASSET_ID.matches(assetId)) { "Invalid assetId" }
         require(VERSION_ID.matches(versionId)) { "Invalid versionId" }
@@ -45,6 +62,7 @@ class RemoteKeys(rawPrefix: String) {
     companion object {
         private val ASSET_ID = Regex("^[0-9a-f]{32}$")
         private val VERSION_ID = Regex("^[0-9a-f]{64}$")
+        private val THUMBNAIL_NAME = Regex("^[0-9a-f]{64}\\.jpg$")
         const val MAX_PREFIX_LENGTH = 200
 
         /** "", "/", "  " -> ""; "/a//b" -> "a/b/". Does not validate; see [ConfigValidator]. */

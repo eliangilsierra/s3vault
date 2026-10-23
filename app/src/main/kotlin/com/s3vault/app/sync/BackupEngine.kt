@@ -9,14 +9,18 @@ import com.s3vault.app.domain.RemoteException
 import com.s3vault.app.domain.RemoteObjectMetadata
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.domain.SyncStateMachine
+import com.s3vault.app.domain.ThumbnailMaker
 import com.s3vault.app.domain.TransferEventType
 import com.s3vault.app.domain.UploadRequest
 import com.s3vault.app.security.Redactor
+import com.s3vault.app.security.SafeLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -53,6 +57,9 @@ class BackupEngine(
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val onTransferSuccess: suspend (Long) -> Unit = {},
     private val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
+    /** Builds the S3 preview of each backed-up file. Null disables previews (tests, or no decoder available). */
+    private val thumbnails: ThumbnailMaker? = null,
+    private val previewsEnabled: suspend () -> Boolean = { true },
 ) {
     private val media get() = db.media()
 
@@ -171,6 +178,7 @@ class BackupEngine(
             if (meta != null && verify(meta, size, hash, requireChecksum = false)) {
                 toVerifying(id)
                 finishBackup(item, existingKey, versionId, size)
+                uploadPreview(ctx, item, versionId)
                 return ItemResult.AlreadyBackedUp
             }
         }
@@ -198,7 +206,59 @@ class BackupEngine(
         val meta = ctx.storage.head(key) ?: throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "object missing after upload")
         if (!verify(meta, size, hash, requireChecksum = true)) throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "size/checksum")
         finishBackup(item, key, versionId, size)
+        uploadPreview(ctx, item, versionId)
         return ItemResult.Uploaded
+    }
+
+    /**
+     * Best effort and never part of the backup's success: a few KB next to the photo so the S3 library can show it
+     * without downloading the original. A failure only leaves the row in the preview backlog for [backfillPreviews].
+     */
+    private suspend fun uploadPreview(ctx: RemoteContext, item: MediaItemEntity, versionId: String) {
+        val maker = thumbnails ?: return
+        if (!previewsEnabled()) return
+        try {
+            val bytes = maker.create(item.uri, item.kind)
+            if (bytes != null) ctx.storage.putThumbnail(ctx.keys.thumbnailKey(versionId), bytes)
+            media.markThumbnailUploaded(item.mediaStoreId, versionId) // null bytes: nothing decodable, nothing to retry
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Preview not uploaded for now: " + Redactor.describe(e))
+        }
+    }
+
+    /**
+     * Creates the missing previews of files that were backed up before previews existed (or whose preview upload
+     * failed), from the copy still on this device. Stops at the first error that would repeat for every file.
+     */
+    suspend fun backfillPreviews(limit: Int = DEFAULT_BACKFILL_LIMIT): Int {
+        val maker = thumbnails ?: return 0
+        if (!previewsEnabled()) return 0
+        val ctx = remote.get() ?: return 0
+        try {
+            credentials.getCredentials()
+        } catch (e: RemoteException) {
+            return 0
+        }
+        var created = 0
+        for (item in media.thumbnailBacklog(limit)) {
+            currentCoroutineContext().ensureActive()
+            val versionId = item.remoteVersionId ?: continue
+            try {
+                val bytes = maker.create(item.uri, item.kind)
+                if (bytes != null) ctx.storage.putThumbnail(ctx.keys.thumbnailKey(versionId), bytes)
+                media.markThumbnailUploaded(item.mediaStoreId, versionId)
+                if (bytes != null) created++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RemoteException) {
+                if (e.needsCredentials || !e.retryable || e.kind == RemoteErrorKind.NETWORK || e.kind == RemoteErrorKind.THROTTLED) break
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Preview backfill skipped one file: " + Redactor.describe(e))
+            }
+        }
+        return created
     }
 
     /**
@@ -295,6 +355,8 @@ class BackupEngine(
 
     companion object {
         const val DEFAULT_MAX_ATTEMPTS = 6
+        const val DEFAULT_BACKFILL_LIMIT = 300
+        private const val TAG = "BackupEngine"
         /** Simple PutObject limit is 5 GiB; multipart is out of scope for this version. */
         const val MAX_SINGLE_PUT_BYTES = 4L * 1024 * 1024 * 1024
     }

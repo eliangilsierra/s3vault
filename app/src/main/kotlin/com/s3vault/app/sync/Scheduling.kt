@@ -99,7 +99,12 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 if (settings.autoBackup) c.backup.enqueuePending(settings.includeVideos, kick = false)
             }
             when (val out = c.backupEngine.run(settings.maxConcurrency)) {
-                is RunOutcome.Completed -> { c.settings.setNeedsCredentials(false); Result.success() }
+                is RunOutcome.Completed -> {
+                    c.settings.setNeedsCredentials(false)
+                    // Same network constraints as the uploads; a few KB per photo, capped per run.
+                    c.backupEngine.backfillPreviews()
+                    Result.success()
+                }
                 is RunOutcome.RetryLater ->
                     // Exponential backoff via WorkManager; give up after a while, items stay QUEUED for the next trigger.
                     if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()

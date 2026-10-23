@@ -263,4 +263,117 @@ class S3RemoteStorageTest {
         assertEquals("bytes=6-", r.headers["Range"])
         assertEquals("\"abc\"", r.headers["If-Match"])
     }
+
+    // ------------------------------------------------------------------ previews and deletion
+
+    private val version = "e".repeat(64)
+
+    @Test fun `delete sends one DeleteObjects request and reports per-key failures`() = runBlocking {
+        val keys = RemoteKeys("p/")
+        val k1 = keys.photoKey(assetId, version, "a.jpg")
+        val k2 = keys.photoKey("c".repeat(32), version, "b.jpg")
+        server.enqueue(
+            MockResponse.Builder().code(200).addHeader("Content-Type", XML).body(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">" +
+                    "<Error><Key>$k2</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error></DeleteResult>",
+            ).build(),
+        )
+
+        val report = storage("p/").delete(listOf(k1, k2))
+
+        assertEquals(listOf(k1), report.deleted)
+        assertEquals(mapOf(k2 to RemoteErrorKind.ACCESS_DENIED), report.failed)
+        assertEquals(1, server.requestCount)
+        val r = server.takeRequest()
+        assertEquals("POST", r.method)
+        assertTrue(r.url.toString(), r.url.encodedQuery!!.startsWith("delete"))
+        val body = r.body!!.utf8()
+        assertTrue(body, body.contains("<Key>$k1</Key>") && body.contains("<Key>$k2</Key>"))
+        assertTrue("only failures come back", body.contains("<Quiet>true</Quiet>"))
+        assertTrue(r.headers["Authorization"]!!.startsWith("AWS4-HMAC-SHA256"))
+    }
+
+    @Test fun `delete refuses anything that is not a photo or preview key without sending a request`() {
+        val keys = RemoteKeys("alice/")
+        val s = storage("alice/")
+        listOf(
+            "bob/photos/$assetId/$version/x.jpg", // another prefix
+            "alice/.s3vault/albums.json", // the album manifest is not deletable from the app
+            "alice/.s3vault/connection-check.txt",
+            "alice/photos/garbage",
+            "alice/photos/../../bob/x",
+        ).forEach { bad ->
+            assertThrows(bad, IllegalArgumentException::class.java) { runBlocking { s.delete(listOf(keys.photoKey(assetId, version, "ok.jpg"), bad)) } }
+        }
+        val tooMany = (0 until 101).map { keys.photoKey("%032x".format(it), version, "x.jpg") }
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { s.delete(tooMany) } }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun `delete with no keys sends nothing`() = runBlocking {
+        val r = storage().delete(emptyList())
+        assertTrue(r.deleted.isEmpty() && r.failed.isEmpty())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun `delete can delete previews`() = runBlocking {
+        val keys = RemoteKeys("p/")
+        server.enqueue(MockResponse.Builder().code(200).addHeader("Content-Type", XML).body("<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"></DeleteResult>").build())
+        val report = storage("p/").delete(listOf(keys.thumbnailKey(version)))
+        assertEquals(listOf(keys.thumbnailKey(version)), report.deleted)
+    }
+
+    @Test fun `a request denied by the IAM policy is reported as access denied`() {
+        server.enqueue(error(403, "AccessDenied"))
+        val key = RemoteKeys("p/").photoKey(assetId, version, "a.jpg")
+        assertEquals(RemoteErrorKind.ACCESS_DENIED, failure { storage("p/").delete(listOf(key)) }.kind)
+    }
+
+    @Test fun `readBytes asks only for the first bytes with a Range request`() = runBlocking {
+        val key = RemoteKeys("p/").photoKey(assetId, version, "a.jpg")
+        server.enqueue(MockResponse.Builder().code(206).body("head-of-file").build())
+
+        val bytes = storage("p/").readBytes(key, maxBytes = 131_072)
+
+        assertEquals("head-of-file", String(bytes!!))
+        val r = server.takeRequest()
+        assertEquals("GET", r.method)
+        assertEquals("bytes=0-131071", r.headers["Range"])
+    }
+
+    @Test fun `readBytes without a limit sends no Range header`() = runBlocking {
+        val key = RemoteKeys("p/").thumbnailKey(version)
+        server.enqueue(MockResponse.Builder().code(200).body("jpeg").build())
+        assertEquals("jpeg", String(storage("p/").readBytes(key)!!))
+        assertNull(server.takeRequest().headers["Range"])
+    }
+
+    @Test fun `readBytes returns null for a missing object and throws for a forbidden one`() {
+        val key = RemoteKeys("p/").thumbnailKey(version)
+        server.enqueue(error(404, "NoSuchKey"))
+        assertNull(runBlocking { storage("p/").readBytes(key) })
+        server.enqueue(error(403, "AccessDenied"))
+        assertEquals(RemoteErrorKind.ACCESS_DENIED, failure { storage("p/").readBytes(key) }.kind)
+    }
+
+    @Test fun `putThumbnail stores a small JPEG under the thumbnails folder`() = runBlocking {
+        val keys = RemoteKeys("p/")
+        server.enqueue(MockResponse.Builder().code(200).addHeader("ETag", "\"t\"").build())
+
+        storage("p/").putThumbnail(keys.thumbnailKey(version), ByteArray(50) { 1 })
+
+        val r = server.takeRequest()
+        assertEquals("PUT", r.method)
+        assertTrue(r.url.encodedPath.endsWith("/.s3vault/thumbs/$version.jpg"))
+        assertEquals("image/jpeg", r.headers["Content-Type"])
+        assertTrue(r.body!!.size >= 50)
+    }
+
+    @Test fun `putThumbnail refuses photo keys and keys outside the prefix`() {
+        val keys = RemoteKeys("p/")
+        val s = storage("p/")
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { s.putThumbnail(keys.photoKey(assetId, version, "a.jpg"), ByteArray(1)) } }
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { s.putThumbnail("q/.s3vault/thumbs/$version.jpg", ByteArray(1)) } }
+        assertEquals(0, server.requestCount)
+    }
 }

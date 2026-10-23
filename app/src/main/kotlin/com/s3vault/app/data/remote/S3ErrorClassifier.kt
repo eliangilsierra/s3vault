@@ -13,7 +13,7 @@ data class S3ErrorFacts(
     val bucketRegionHeader: String?,
 )
 
-enum class OperationContext { LIST, PUT, GET, HEAD }
+enum class OperationContext { LIST, PUT, GET, HEAD, DELETE }
 
 object S3ErrorClassifier {
     private val expectingRegion = Regex("expecting '([a-z0-9-]+)'", RegexOption.IGNORE_CASE)
