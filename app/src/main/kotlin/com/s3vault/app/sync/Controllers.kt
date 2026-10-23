@@ -19,6 +19,8 @@ class LibraryRepository(
     private val scanner: MediaScanSource,
     private val indexer: MediaIndexer,
     private val access: () -> MediaAccess,
+    /** Runs before every scan (e.g. rewrite day keys after a time zone change). */
+    private val beforeScan: suspend () -> Unit = {},
 ) {
     private val mutex = Mutex()
 
@@ -26,6 +28,7 @@ class LibraryRepository(
     suspend fun refresh(): IndexResult? = mutex.withLock {
         val a = access()
         if (a == MediaAccess.NONE) return null
+        beforeScan()
         indexer.reconcile(scanner.scan(), fullAccess = a == MediaAccess.FULL)
     }
 }
@@ -126,6 +129,11 @@ class RemoteLibraryController(
     }
 
     suspend fun hasLocalCopy(versionId: String): Boolean = db.media().countLocalWithHash(versionId) > 0
+
+    /** Opt-in: reads the capture date of the objects that have none (one HEAD each, resumable, WorkManager). */
+    suspend fun completeCaptureDates() = scheduler.kickCloudDates(settings.currentBackup().wifiOnly)
+
+    fun cancelCaptureDates() = scheduler.cancelCloudDates()
 }
 
 class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long = System::currentTimeMillis) {

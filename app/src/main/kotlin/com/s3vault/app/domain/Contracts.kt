@@ -64,6 +64,13 @@ interface RemoteStorage {
     /** Lists every object under `{prefix}photos/`. */
     suspend fun listPhotos(): List<RemoteListing>
 
+    /**
+     * Same listing, delivered one ListObjectsV2 page (up to 1000 keys) at a time so callers can store it as it arrives
+     * without holding the whole bucket in memory. Returns normally only after the last page; an exception means the
+     * listing is incomplete.
+     */
+    suspend fun listPhotosPaged(onPage: suspend (List<RemoteListing>) -> Unit)
+
     /** Returns null when the object does not exist. */
     suspend fun head(key: String): RemoteObjectMetadata?
 

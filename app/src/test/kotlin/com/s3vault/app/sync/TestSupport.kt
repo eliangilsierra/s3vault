@@ -79,14 +79,38 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
 
     override suspend fun listPhotos(): List<RemoteListing> {
         listFailure?.let { throw it }
-        return objects.filterKeys { keys.isPhotoKey(it) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), 1_000L) }
+        return objects.filterKeys { keys.isPhotoKey(it) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), uploadTimes[k] ?: 1_000L) }
     }
+
+    /** Upload time reported per key (defaults to 1000). */
+    val uploadTimes = mutableMapOf<String, Long>()
+    var listPageSize = 1000
+    var pagesDelivered = 0
+    /** When set, the listing fails after this many pages (the earlier pages were delivered). */
+    var failListingAfterPages: Int? = null
+    var listCalls = 0
+
+    override suspend fun listPhotosPaged(onPage: suspend (List<RemoteListing>) -> Unit) {
+        listCalls++
+        listFailure?.let { throw it }
+        val all = listPhotos()
+        var delivered = 0
+        all.chunked(listPageSize.coerceAtLeast(1)).ifEmpty { listOf(emptyList()) }.forEach { page ->
+            if (failListingAfterPages != null && delivered >= failListingAfterPages!!) throw RemoteException(RemoteErrorKind.NETWORK)
+            onPage(page); delivered++; pagesDelivered++
+        }
+    }
+
+    /** User metadata returned by head() per key (for example captured-at-ms). */
+    val metadata = mutableMapOf<String, Map<String, String>>()
+    var headCalls = 0
 
     override suspend fun head(key: String): RemoteObjectMetadata? {
         require(keys.isWithinPrefix(key))
+        headCalls++
         headFailures.removeFirstOrNull()?.let { throw it }
         val o = objects[key] ?: return null
-        return RemoteObjectMetadata(key, o.bytes.size.toLong(), 1_000L, o.etag, headChecksumOverride ?: o.sha256B64, "image/jpeg", emptyMap())
+        return RemoteObjectMetadata(key, o.bytes.size.toLong(), 1_000L, o.etag, headChecksumOverride ?: o.sha256B64, "image/jpeg", metadata[key] ?: emptyMap())
     }
 
     override suspend fun upload(request: UploadRequest, onProgress: (Long) -> Unit): UploadResult {
@@ -162,6 +186,10 @@ class FakeScheduler : WorkScheduler {
     override fun configureAuto(settings: BackupSettings) { lastAuto = settings }
     override fun kickRestore(wifiOnly: Boolean) { restoreKicks++ }
     override fun cancelRestore() { restoreCancels++ }
+    var datesKicks = 0
+    var datesCancels = 0
+    override fun kickCloudDates(wifiOnly: Boolean) { datesKicks++ }
+    override fun cancelCloudDates() { datesCancels++ }
 }
 
 class FakeSink : RestoreSink {

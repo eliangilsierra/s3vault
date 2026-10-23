@@ -1,5 +1,6 @@
 package com.s3vault.app.domain
 
+import com.s3vault.app.domain.library.DateSource
 import java.time.Instant
 
 enum class MediaKind { IMAGE, VIDEO }
@@ -44,6 +45,7 @@ data class MediaItem(
     val lastErrorPermanent: Boolean,
     val attempts: Int,
     val present: Boolean,
+    val dateSource: DateSource = DateSource.CAPTURE,
 ) {
     val isBackedUp: Boolean get() = syncState == SyncState.BACKED_UP
 }
@@ -67,6 +69,10 @@ data class RemoteObject(
     val state: SyncState,
     val lastError: String?,
     val availableLocally: Boolean,
+    /** Best date for the timeline; see [dateSource] for how much to trust it. */
+    val effectiveDateMs: Long = lastModifiedMs,
+    val dateSource: DateSource = DateSource.FALLBACK,
+    val mediaKind: MediaKind? = null,
 )
 
 /** Metadata that can be read with a HEAD request. */

@@ -4,12 +4,18 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Transaction
 import androidx.room.Update
 import com.s3vault.app.domain.SyncState
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 data class HashedItem(val mediaStoreId: Long, val contentSha256: String?, val remoteVersionId: String?)
+
+data class RemoteDateRow(val key: String, val effectiveDateMs: Long, val lastModifiedMs: Long, val dateSource: com.s3vault.app.domain.library.DateSource)
+
+data class LocalDateRow(val mediaStoreId: Long, val dateTakenMs: Long)
 
 @Dao
 interface MediaDao {
@@ -20,8 +26,37 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE') ORDER BY dateTakenMs DESC, mediaStoreId DESC")
     fun observeGallery(includeVideos: Boolean): Flow<List<MediaItemEntity>>
 
+    // ---- Smart gallery: dynamic queries built by LocalLibrarySql (every value bound, never concatenated).
+
+    @RawQuery(observedEntities = [MediaItemEntity::class])
+    fun observeDayCounts(query: SupportSQLiteQuery): Flow<List<DayCount>>
+
+    @RawQuery(observedEntities = [MediaItemEntity::class])
+    fun observeCount(query: SupportSQLiteQuery): Flow<Int>
+
+    @RawQuery
+    suspend fun rows(query: SupportSQLiteQuery): List<MediaItemEntity>
+
+    @RawQuery
+    suspend fun idList(query: SupportSQLiteQuery): List<Long>
+
+    @RawQuery
+    suspend fun countOnce(query: SupportSQLiteQuery): Int
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE present = 1")
+    fun observePresentCount(): Flow<Int>
+
+    @Query(LocalLibrarySql.FOLDERS)
+    fun observeFolders(): Flow<List<FolderCount>>
+
     @Query("SELECT * FROM media_items WHERE mediaStoreId = :id")
     suspend fun get(id: Long): MediaItemEntity?
+
+    @Query("SELECT mediaStoreId, dateTakenMs FROM media_items")
+    suspend fun datesForZoneChange(): List<LocalDateRow>
+
+    @Query("UPDATE media_items SET dayKey = :day WHERE mediaStoreId = :id")
+    suspend fun setDayKey(id: Long, day: Int)
 
     @Query("SELECT * FROM media_items WHERE mediaStoreId = :id")
     fun observe(id: Long): Flow<MediaItemEntity?>
@@ -155,8 +190,67 @@ interface RemoteDao {
     @Query("SELECT * FROM remote_objects WHERE key = :key")
     suspend fun get(key: String): RemoteObjectEntity?
 
+    // ---- Smart gallery over the cached listing (nothing here talks to S3).
+
+    @RawQuery(observedEntities = [RemoteObjectEntity::class, MediaItemEntity::class])
+    fun observeDayCounts(query: SupportSQLiteQuery): Flow<List<DayCount>>
+
+    @RawQuery(observedEntities = [RemoteObjectEntity::class, MediaItemEntity::class])
+    fun observeCount(query: SupportSQLiteQuery): Flow<Int>
+
+    @RawQuery
+    suspend fun rows(query: SupportSQLiteQuery): List<RemoteObjectEntity>
+
+    @RawQuery
+    suspend fun keyList(query: SupportSQLiteQuery): List<String>
+
+    @RawQuery
+    suspend fun countOnce(query: SupportSQLiteQuery): Int
+
+    @Query("SELECT COUNT(*) FROM remote_objects")
+    fun observeObjectCount(): Flow<Int>
+
     @Query("SELECT * FROM remote_objects")
     suspend fun getAll(): List<RemoteObjectEntity>
+
+    @Query("SELECT `key` FROM remote_objects")
+    suspend fun allKeys(): List<String>
+
+    /**
+     * Objects backed by a local file that has a real capture date take it from there: free, exact and without a request.
+     * Objects whose date is already a capture date are left alone.
+     */
+    @Query(
+        "UPDATE remote_objects SET " +
+            "effectiveDateMs = (SELECT m.dateTakenMs FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE' LIMIT 1), " +
+            "dayKey = (SELECT m.dayKey FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE' LIMIT 1), " +
+            "dateSource = 'CAPTURE', metaChecked = 1 " +
+            "WHERE dateSource != 'CAPTURE' AND EXISTS (SELECT 1 FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE')",
+    )
+    suspend fun applyLocalCaptureDates(): Int
+
+    /** Objects whose date is not a capture date and whose metadata was never asked for: the candidates of the opt-in HEAD pass. */
+    @Query("SELECT * FROM remote_objects WHERE dateSource != 'CAPTURE' AND metaChecked = 0 LIMIT :limit")
+    suspend fun pendingMeta(limit: Int): List<RemoteObjectEntity>
+
+    @Query("SELECT COUNT(*) FROM remote_objects WHERE dateSource != 'CAPTURE' AND metaChecked = 0")
+    fun observePendingMetaCount(): Flow<Int>
+
+    @Query("UPDATE remote_objects SET effectiveDateMs = :ms, dateSource = 'CAPTURE', dayKey = :day, metaChecked = 1 WHERE `key` = :key")
+    suspend fun applyCapture(key: String, ms: Long, day: Int)
+
+    @Query("UPDATE remote_objects SET metaChecked = 1 WHERE `key` = :key")
+    suspend fun markMetaChecked(key: String)
+
+    /** Rewrites the day keys after the device time zone changed. Capture dates only: an unknown date has no key. */
+    @Query("UPDATE remote_objects SET dayKey = :day WHERE `key` = :key")
+    suspend fun setDayKey(key: String, day: Int)
+
+    @Query("UPDATE remote_objects SET uploadDayKey = :day WHERE `key` = :key")
+    suspend fun setUploadDayKey(key: String, day: Int)
+
+    @Query("SELECT `key`, effectiveDateMs, lastModifiedMs, dateSource FROM remote_objects")
+    suspend fun datesForZoneChange(): List<RemoteDateRow>
 
     @Query("SELECT * FROM remote_objects WHERE key IN (:keys)")
     suspend fun getByKeys(keys: List<String>): List<RemoteObjectEntity>

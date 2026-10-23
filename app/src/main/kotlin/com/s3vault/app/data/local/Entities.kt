@@ -11,6 +11,7 @@ import com.s3vault.app.domain.RemoteObject
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.domain.TransferEvent
 import com.s3vault.app.domain.TransferEventType
+import com.s3vault.app.domain.library.DateSource
 
 /**
  * Local index of device media and the source of truth for sync state.
@@ -19,7 +20,11 @@ import com.s3vault.app.domain.TransferEventType
  */
 @Entity(
     tableName = "media_items",
-    indices = [Index("syncState"), Index("dateTakenMs"), Index("assetId", unique = true)],
+    indices = [
+        Index("syncState"), Index("dateTakenMs"), Index("assetId", unique = true),
+        // The gallery lists present rows by date and groups them by day: both walk these indexes instead of the table.
+        Index("present", "dateTakenMs"), Index("present", "dayKey"), Index("remoteKey"),
+    ],
 )
 data class MediaItemEntity(
     @PrimaryKey val mediaStoreId: Long,
@@ -56,6 +61,10 @@ data class MediaItemEntity(
      * leaves it alone instead of silently uploading it again; selecting it and choosing "Respaldar" clears the flag.
      */
     val backupExcluded: Boolean = false,
+    /** `yyyyMMdd` of [dateTakenMs] in the device zone when it was indexed (recomputed if the zone changes). */
+    val dayKey: Int = 0,
+    /** Where [dateTakenMs] comes from; FALLBACK dates are the file's own and shown as estimated. */
+    val dateSource: DateSource = DateSource.CAPTURE,
 ) {
     fun hashIsValid(): Boolean =
         contentSha256 != null && hashSizeBytes == sizeBytes && hashDateModifiedSec == dateModifiedSec
@@ -67,12 +76,15 @@ data class MediaItemEntity(
     fun toDomain() = MediaItem(
         mediaStoreId, uri, kind, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height,
         folderName, assetId, syncState, remoteKey, remoteVersionId, lastBackupAtMs, lastError, lastErrorPermanent,
-        attempts, present,
+        attempts, present, dateSource,
     )
 }
 
 /** Cached listing of `{prefix}photos/`. A cache only: deleting a row never deletes anything in S3. */
-@Entity(tableName = "remote_objects", indices = [Index("assetId"), Index("versionId")])
+@Entity(
+    tableName = "remote_objects",
+    indices = [Index("assetId"), Index("versionId"), Index("dayKey", "effectiveDateMs"), Index("uploadDayKey")],
+)
 data class RemoteObjectEntity(
     @PrimaryKey val key: String,
     val assetId: String,
@@ -83,9 +95,21 @@ data class RemoteObjectEntity(
     val state: SyncState = SyncState.REMOTE_ONLY,
     val lastError: String? = null,
     val restoredUri: String? = null,
+    /** Date used to place the object on the timeline; [lastModifiedMs] (the upload time) until something better is known. */
+    val effectiveDateMs: Long = lastModifiedMs,
+    val dateSource: DateSource = DateSource.FALLBACK,
+    /** `yyyyMMdd` of the capture date, or 0 when there is none (upload time is not a capture date). */
+    val dayKey: Int = 0,
+    /** `yyyyMMdd` of [lastModifiedMs], used when the list is sorted and grouped by upload date. */
+    val uploadDayKey: Int = 0,
+    /** From the file extension; null when unknown. */
+    val mediaKind: MediaKind? = null,
+    /** True once the object's metadata was asked for (or no longer needs to be), so it is never requested twice. */
+    val metaChecked: Boolean = false,
 ) {
     fun toDomain(availableLocally: Boolean) = RemoteObject(
         key, assetId, versionId, displayName, sizeBytes, lastModifiedMs, state, lastError, availableLocally || restoredUri != null,
+        effectiveDateMs, dateSource, mediaKind,
     )
 }
 

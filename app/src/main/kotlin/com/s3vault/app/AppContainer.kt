@@ -24,7 +24,9 @@ import com.s3vault.app.sync.AlbumController
 import com.s3vault.app.sync.AlbumImporter
 import com.s3vault.app.sync.BackupController
 import com.s3vault.app.sync.BackupEngine
+import com.s3vault.app.sync.CloudDatesEngine
 import com.s3vault.app.sync.CloudDeletionController
+import com.s3vault.app.sync.DayKeyMaintainer
 import com.s3vault.app.sync.LocalDeletionController
 import com.s3vault.app.sync.RemotePreviewRepository
 import com.s3vault.app.sync.EventLog
@@ -39,6 +41,7 @@ import com.s3vault.app.sync.RestoreSink
 import com.s3vault.app.sync.TransferProgress
 import com.s3vault.app.sync.WorkManagerScheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -57,9 +60,17 @@ class AppContainer(private val context: Context) {
     private val mediaSource by lazy { MediaStoreSource(context) }
 
     val library: LibraryRepository by lazy {
-        LibraryRepository(mediaSource, MediaIndexer(db)) { mediaAccess() }
+        LibraryRepository(mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() })
     }
-    val catalog by lazy { RemoteCatalog(db) }
+    val catalog by lazy {
+        RemoteCatalog(
+            db,
+            onListed = { settings.saveRemoteListing(it) },
+            lastCompleteListing = { settings.remoteListing.first()?.takeIf { it.complete } },
+        )
+    }
+    val dayKeys by lazy { DayKeyMaintainer(db, settings) }
+    val cloudDates by lazy { CloudDatesEngine(db, remoteProvider, credentials, catalog) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
     val albumImporter by lazy { AlbumImporter(db, remoteProvider) }

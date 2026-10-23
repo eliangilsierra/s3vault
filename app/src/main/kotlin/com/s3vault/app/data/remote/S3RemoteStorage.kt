@@ -152,6 +152,11 @@ class S3RemoteStorage(
 
     override suspend fun listPhotos(): List<RemoteListing> {
         val out = ArrayList<RemoteListing>()
+        listPhotosPaged { out += it }
+        return out
+    }
+
+    override suspend fun listPhotosPaged(onPage: suspend (List<RemoteListing>) -> Unit) {
         var token: String? = null
         do {
             val resp = guarded(OperationContext.LIST) {
@@ -163,13 +168,14 @@ class S3RemoteStorage(
                     },
                 )
             }
+            val page = ArrayList<RemoteListing>()
             resp.contents.orEmpty().forEach { o ->
                 val k = o.key ?: return@forEach
-                if (keys.isPhotoKey(k)) out += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L)
+                if (keys.isPhotoKey(k)) page += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L)
             }
+            onPage(page)
             token = if (resp.isTruncated == true) resp.nextContinuationToken else null
         } while (token != null)
-        return out
     }
 
     override suspend fun head(key: String): RemoteObjectMetadata? {

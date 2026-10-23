@@ -60,6 +60,10 @@ class AppSettings(private val context: Context) {
         val connMessage = stringPreferencesKey("conn_message")
         val needsCredentials = booleanPreferencesKey("needs_credentials")
         val lastSuccessfulTransfer = longPreferencesKey("last_success")
+        val listedAt = longPreferencesKey("remote_listed_at")
+        val listedComplete = booleanPreferencesKey("remote_listed_complete")
+        val listedCount = intPreferencesKey("remote_listed_count")
+        val dayZone = stringPreferencesKey("day_zone")
     }
 
     val s3Config: Flow<S3Config?> = store.data.map { p ->
@@ -98,6 +102,23 @@ class AppSettings(private val context: Context) {
     val needsCredentials: Flow<Boolean> = store.data.map { it[K.needsCredentials] ?: false }
 
     val lastSuccessfulTransferMs: Flow<Long?> = store.data.map { it[K.lastSuccessfulTransfer] }
+
+    /** The last pass over the bucket, or null if it was never listed on this device. */
+    val remoteListing: Flow<com.s3vault.app.sync.ListingResult?> = store.data.map { p ->
+        p[K.listedAt]?.let { com.s3vault.app.sync.ListingResult(it, p[K.listedComplete] ?: false, p[K.listedCount] ?: 0) }
+    }
+
+    suspend fun saveRemoteListing(r: com.s3vault.app.sync.ListingResult) {
+        store.edit {
+            // An incomplete pass must not overwrite the time of the last complete one: the UI shows both honestly.
+            if (r.complete) { it[K.listedAt] = r.atMs; it[K.listedCount] = r.count }
+            it[K.listedComplete] = r.complete
+        }
+    }
+
+    /** Zone the day keys were last computed in; null before the first computation. */
+    suspend fun dayZone(): String? = store.data.first()[K.dayZone]
+    suspend fun setDayZone(id: String) = store.edit { it[K.dayZone] = id }.let { }
 
     suspend fun currentS3Config(): S3Config? = s3Config.first()
     suspend fun currentBackup(): BackupSettings = backup.first()
@@ -138,6 +159,7 @@ class AppSettings(private val context: Context) {
             it.remove(K.region); it.remove(K.bucket); it.remove(K.prefix); it.remove(K.authMethod)
             it.remove(K.connVerifiedAt); it.remove(K.connOk); it.remove(K.connMessage)
             it[K.needsCredentials] = false
+            it.remove(K.listedAt); it.remove(K.listedComplete); it.remove(K.listedCount)
         }
     }
 }
