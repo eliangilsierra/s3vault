@@ -56,6 +56,9 @@ import com.s3vault.app.domain.Album
 import com.s3vault.app.presentation.AlbumsViewModel
 import com.s3vault.app.presentation.GridSkeleton
 import com.s3vault.app.presentation.MediaGrid
+import com.s3vault.app.presentation.delete.DeleteHost
+import com.s3vault.app.presentation.delete.DeleteViewModel
+import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.ui.AppTopBar
 import com.s3vault.app.presentation.ui.BackButton
@@ -158,7 +161,14 @@ private fun AlbumTile(album: Album, onClick: () -> Unit) {
 }
 
 @Composable
-fun AlbumDetailScreen(vm: AlbumsViewModel, albumId: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
+fun AlbumDetailScreen(
+    vm: AlbumsViewModel,
+    deleteVm: DeleteViewModel,
+    albumId: Long,
+    onBack: () -> Unit,
+    onOpen: (Long) -> Unit,
+    onOpenCredentials: () -> Unit = {},
+) {
     val name by vm.albumName(albumId).collectAsStateWithLifecycle(initialValue = null)
     val media by remember(albumId) { vm.albumMedia(albumId) }.collectAsStateWithLifecycle(initialValue = null)
     val selected by vm.selection.collectAsStateWithLifecycle()
@@ -166,10 +176,12 @@ fun AlbumDetailScreen(vm: AlbumsViewModel, albumId: Long, onBack: () -> Unit, on
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val selecting = selected.isNotEmpty()
+    val snackbar = remember { SnackbarHostState() }
     BackHandler(enabled = selecting) { vm.clearSelection() }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             AppTopBar(
                 title = if (selecting) (if (selected.size == 1) "1 seleccionada" else "${selected.size} seleccionadas") else name.orEmpty(),
@@ -182,6 +194,9 @@ fun AlbumDetailScreen(vm: AlbumsViewModel, albumId: Long, onBack: () -> Unit, on
                     if (selecting) {
                         IconButton(onClick = vm::backupSelected) { Icon(Icons.Filled.CloudUpload, "Respaldar en S3") }
                         IconButton(onClick = { vm.removeSelected(albumId) }) { Icon(Icons.Filled.RemoveCircleOutline, "Quitar del álbum") }
+                        IconButton(onClick = { deleteVm.request(media.orEmpty().filter { it.mediaStoreId in selected }.map { it.toDeleteEntry() }) }) {
+                            Icon(Icons.Filled.Delete, "Eliminar fotos…", tint = MaterialTheme.colorScheme.error)
+                        }
                     } else {
                         IconButton(onClick = { renaming = true }) { Icon(Icons.Filled.Edit, "Renombrar") }
                         IconButton(onClick = { deleting = true }) { Icon(Icons.Filled.Delete, "Eliminar álbum") }
@@ -207,6 +222,7 @@ fun AlbumDetailScreen(vm: AlbumsViewModel, albumId: Long, onBack: () -> Unit, on
             }
         }
     }
+    DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenCredentials)
     if (renaming) NameDialog("Renombrar álbum", name.orEmpty(), "Guardar", { vm.rename(albumId, it); renaming = false }, { renaming = false })
     if (deleting) {
         ConfirmDialog(

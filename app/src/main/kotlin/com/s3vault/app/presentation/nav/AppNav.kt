@@ -69,7 +69,9 @@ import com.s3vault.app.presentation.albums.AlbumDetailScreen
 import com.s3vault.app.presentation.albums.AlbumsScreen
 import com.s3vault.app.presentation.backup.BackupScreen
 import com.s3vault.app.presentation.gallery.GalleryScreen
+import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.remote.RemoteScreen
+import com.s3vault.app.presentation.viewer.CloudViewerScreen
 import com.s3vault.app.presentation.settings.GeneralSettingsScreen
 import com.s3vault.app.presentation.settings.S3SettingsScreen
 import com.s3vault.app.presentation.settings.SecurityScreen
@@ -89,6 +91,7 @@ private val TabRoutes = Tab.entries.map { it.route }.toSet()
 
 private const val VIEWER = "viewer/{source}/{id}"
 private const val ALBUM = "album/{id}"
+private const val CLOUD = "cloud/{key}"
 
 @Composable
 fun AppRoot(container: AppContainer) {
@@ -159,7 +162,13 @@ fun AppRoot(container: AppContainer) {
         ) {
             composable(Tab.Gallery.route) {
                 val vm: GalleryViewModel = viewModel(factory = factory)
-                GalleryScreen(vm, onOpen = { id -> nav.navigate("viewer/all/$id") }, onOpenBackup = { nav.navigateTab(Tab.Backup.route) })
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                GalleryScreen(
+                    vm, deleteVm,
+                    onOpen = { id -> nav.navigate("viewer/all/$id") },
+                    onOpenBackup = { nav.navigateTab(Tab.Backup.route) },
+                    onOpenCredentials = { nav.navigate("settings/security") },
+                )
             }
             composable(Tab.Albums.route) {
                 val vm: AlbumsViewModel = viewModel(factory = factory)
@@ -167,8 +176,13 @@ fun AppRoot(container: AppContainer) {
             }
             composable(ALBUM, listOf(navArgument("id") { type = NavType.LongType })) { e ->
                 val vm: AlbumsViewModel = viewModel(factory = factory)
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
                 val id = e.arguments!!.getLong("id")
-                AlbumDetailScreen(vm, id, onBack = { nav.popBackStack() }, onOpen = { mid -> nav.navigate("viewer/album-$id/$mid") })
+                AlbumDetailScreen(
+                    vm, deleteVm, id, onBack = { nav.popBackStack() },
+                    onOpen = { mid -> nav.navigate("viewer/album-$id/$mid") },
+                    onOpenCredentials = { nav.navigate("settings/security") },
+                )
             }
             composable(Tab.Backup.route) {
                 val vm: BackupViewModel = viewModel(factory = factory)
@@ -176,7 +190,22 @@ fun AppRoot(container: AppContainer) {
             }
             composable(Tab.Remote.route) {
                 val vm: RemoteViewModel = viewModel(factory = factory)
-                RemoteScreen(vm, onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenSecurity = { nav.navigate("settings/security") })
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                RemoteScreen(
+                    vm, deleteVm,
+                    onOpenS3Settings = { nav.navigate("settings/s3") },
+                    onOpenSecurity = { nav.navigate("settings/security") },
+                    onOpenPhoto = { obj -> nav.navigate("cloud/" + android.net.Uri.encode(obj.key)) },
+                )
+            }
+            composable(CLOUD, listOf(navArgument("key") { type = NavType.StringType })) { e ->
+                val vm: RemoteViewModel = viewModel(factory = factory)
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                val items = vm.state.collectAsStateWithLifecycle().value.items
+                if (items.isEmpty()) LoadingBox() else CloudViewerScreen(
+                    items = items, startKey = e.arguments!!.getString("key")!!, vm = vm, deleteVm = deleteVm,
+                    onBack = { nav.popBackStack() }, onOpenCredentials = { nav.navigate("settings/security") },
+                )
             }
             composable(Tab.Settings.route) {
                 SettingsHome(
@@ -201,6 +230,7 @@ fun AppRoot(container: AppContainer) {
                 VIEWER,
                 listOf(navArgument("source") { type = NavType.StringType }, navArgument("id") { type = NavType.LongType }),
             ) { e ->
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
                 val source = e.arguments!!.getString("source")!!
                 val startId = e.arguments!!.getLong("id")
                 val scope = rememberCoroutineScope()
@@ -215,6 +245,8 @@ fun AppRoot(container: AppContainer) {
                 if (items == null) LoadingBox() else ViewerScreen(
                     items = items, startId = startId,
                     onBack = { nav.popBackStack() },
+                    deleteVm = deleteVm,
+                    onOpenCredentials = { nav.navigate("settings/security") },
                     onBackup = { item ->
                         val n = container.backup.enqueue(listOf(item.mediaStoreId))
                         when {

@@ -566,6 +566,13 @@ fun GeneralSettingsScreen(vm: GeneralSettingsViewModel, onBack: () -> Unit) {
                 s.backup.includeVideos, vm::setIncludeVideos,
             )
             GroupDivider()
+            SwitchRow(
+                "Vistas previas en S3",
+                "Sube una miniatura de unos 50 KB junto a cada foto respaldada para poder verla en la pestaña S3 sin descargar el original. " +
+                    "Coste: una petición PUT extra por foto y unos KB de almacenamiento.",
+                s.backup.cloudPreviews, vm::setCloudPreviews,
+            )
+            GroupDivider()
             Column(Modifier.padding(horizontal = Space.l, vertical = Space.m)) {
                 Text("Subidas simultáneas: ${s.backup.maxConcurrency}", style = MaterialTheme.typography.bodyLarge)
                 Slider(value = s.backup.maxConcurrency.toFloat(), onValueChange = { vm.setConcurrency(it.toInt()) }, valueRange = 1f..4f, steps = 2)
@@ -578,7 +585,7 @@ fun GeneralSettingsScreen(vm: GeneralSettingsViewModel, onBack: () -> Unit) {
                 "En el teléfono: tus fotos (MediaStore), un índice local (Room) con nombres, tamaños y estado de respaldo, y las credenciales cifradas.",
                 "En S3: una copia de cada foto respaldada con su nombre sanitizado, tipo, fecha de captura y huella SHA-256 en los metadatos. Cualquier identidad con acceso a tu bucket puede leerlas.",
                 "No es cifrado de extremo a extremo: el cifrado en reposo es el de S3 (SSE-S3 activo por defecto en buckets nuevos; puedes elegir SSE-KMS en tu bucket).",
-                "Eliminar una foto del teléfono, quitarla de un álbum, cerrar sesión o desinstalar NO borra nada en S3. Esta versión no incluye borrado remoto.",
+                "Eliminar una foto del teléfono, quitarla de un álbum, cerrar sesión o desinstalar NO borra nada en S3. Solo se borra de S3 si eliges «Eliminar de S3» y lo confirmas, y solo si tu política IAM lo permite.",
                 "No hay servidores del desarrollador, cuentas, anuncios ni telemetría.",
             )
             Column(Modifier.padding(Space.l), verticalArrangement = Arrangement.spacedBy(Space.m)) {

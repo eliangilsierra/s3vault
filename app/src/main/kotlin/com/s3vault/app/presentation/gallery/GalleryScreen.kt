@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PhotoAlbum
@@ -35,6 +38,8 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +60,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -67,6 +74,9 @@ import com.s3vault.app.domain.SyncState
 import com.s3vault.app.presentation.GalleryViewModel
 import com.s3vault.app.presentation.GridSkeleton
 import com.s3vault.app.presentation.MediaGrid
+import com.s3vault.app.presentation.delete.DeleteHost
+import com.s3vault.app.presentation.delete.DeleteViewModel
+import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.shareMedia
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.ui.AppTopBar
@@ -103,13 +113,21 @@ private fun glanceOf(items: List<MediaItem>): BackupGlance {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(vm: GalleryViewModel, onOpen: (Long) -> Unit, onOpenBackup: () -> Unit = {}) {
+fun GalleryScreen(
+    vm: GalleryViewModel,
+    deleteVm: DeleteViewModel,
+    onOpen: (Long) -> Unit,
+    onOpenBackup: () -> Unit = {},
+    onOpenCredentials: () -> Unit = {},
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val uploads by vm.uploads.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var albumSheet by remember { mutableStateOf(false) }
+    var overflow by remember { mutableStateOf(false) }
     val reduced = rememberReducedMotion()
+    val haptics = LocalHapticFeedback.current
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
 
@@ -130,17 +148,38 @@ fun GalleryScreen(vm: GalleryViewModel, onOpen: (Long) -> Unit, onOpenBackup: ()
         topBar = {
             Crossfade(targetState = selectionMode, animationSpec = tween(if (reduced) 0 else 150), label = "galleryBar") { selecting ->
                 if (selecting) {
+                    val chosen = state.items.orEmpty().filter { it.mediaStoreId in state.selected }
+                    val inCloud = chosen.count { it.remoteKey != null }
                     AppTopBar(
                         title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
+                        subtitle = when {
+                            inCloud == 0 -> "Solo en este dispositivo"
+                            inCloud == chosen.size -> "Todas con copia en S3"
+                            else -> "$inCloud con copia en S3 · ${chosen.size - inCloud} sin copia"
+                        },
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                         actions = {
                             IconButton(onClick = { vm.selectAll(state.items.orEmpty().map { it.mediaStoreId }) }) { Icon(Icons.Filled.SelectAll, "Seleccionar todo") }
                             IconButton(onClick = vm::backupSelected) { Icon(Icons.Filled.CloudUpload, "Respaldar en S3") }
-                            IconButton(onClick = { albumSheet = true }) { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Añadir a álbum") }
-                            IconButton(onClick = {
-                                shareMedia(ctx, state.items.orEmpty().filter { it.mediaStoreId in state.selected })
-                            }) { Icon(Icons.Filled.Share, "Compartir") }
+                            IconButton(onClick = { deleteVm.request(chosen.map { it.toDeleteEntry() }) }) {
+                                Icon(Icons.Filled.Delete, "Eliminar…", tint = MaterialTheme.colorScheme.error)
+                            }
+                            Box {
+                                IconButton(onClick = { overflow = true }) { Icon(Icons.Filled.MoreVert, "Más acciones") }
+                                DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Añadir a álbum") },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                                        onClick = { overflow = false; albumSheet = true },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Compartir") },
+                                        leadingIcon = { Icon(Icons.Filled.Share, null) },
+                                        onClick = { overflow = false; shareMedia(ctx, chosen) },
+                                    )
+                                }
+                            }
                         },
                     )
                 } else {
@@ -197,12 +236,17 @@ fun GalleryScreen(vm: GalleryViewModel, onOpen: (Long) -> Unit, onOpenBackup: ()
                         selected = state.selected,
                         uploads = uploads,
                         onClick = { if (selectionMode) vm.toggle(it.mediaStoreId) else onOpen(it.mediaStoreId) },
-                        onLongClick = { vm.toggle(it.mediaStoreId) },
+                        onLongClick = {
+                            if (!selectionMode) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.toggle(it.mediaStoreId)
+                        },
                     )
                 }
             }
         }
     }
+
+    DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenCredentials)
 
     if (albumSheet) {
         AddToAlbumSheet(

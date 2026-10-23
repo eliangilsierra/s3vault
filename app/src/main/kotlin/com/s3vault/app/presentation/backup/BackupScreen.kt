@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
@@ -134,6 +135,10 @@ fun BackupScreen(vm: BackupViewModel, onOpenS3Settings: () -> Unit, onOpenSecuri
                 }
             }
 
+            if (s.configured && s.settings.cloudPreviews && s.previewBacklog > 0) item {
+                PreviewsCard(s.previewBacklog, enabled = !s.settings.paused && s.auth !is AuthStatus.Expired, onCreate = vm::createPreviews)
+            }
+
             if (s.inFlight.isNotEmpty()) {
                 item { SectionHeader("Transferencias en curso") }
                 items(s.inFlight, key = { "f-${it.mediaStoreId}" }) { InFlightRow(it, uploads[it.mediaStoreId]) }
@@ -200,6 +205,31 @@ private fun Overview(backedUp: Int, pending: Int, queued: Int, inFlight: Int, fa
                 "Última transferencia correcta: " + (last?.let { formatDateTime(it) } ?: "ninguna todavía"),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * Older backups have no S3 preview yet. Creating them re-reads the photo on this device and uploads ~50 KB each, so it
+ * is a visible, optional step with its cost spelled out instead of a silent background surprise.
+ */
+@Composable
+private fun PreviewsCard(pending: Int, enabled: Boolean, onCreate: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(Space.l), verticalArrangement = Arrangement.spacedBy(Space.s)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                Icon(Icons.Filled.Image, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (pending == 1) "1 foto sin vista previa en S3" else "$pending fotos sin vista previa en S3",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            Text(
+                "Con una vista previa puedes ver la foto en la pestaña S3 sin descargar el original. Se crea desde la copia de este dispositivo " +
+                    "y se sube una miniatura de unos 50 KB (una petición PUT por foto). Se hace sola tras cada respaldo; esto completa las anteriores.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SecondaryButton("Crear vistas previas", onCreate, Modifier.fillMaxWidth(), enabled = enabled, icon = Icons.Filled.CloudUpload)
         }
     }
 }

@@ -47,6 +47,7 @@ class AppViewModelFactory(private val container: AppContainer) : ViewModelProvid
         S3SettingsViewModel::class.java -> S3SettingsViewModel(container)
         SecurityViewModel::class.java -> SecurityViewModel(container)
         GeneralSettingsViewModel::class.java -> GeneralSettingsViewModel(container)
+        com.s3vault.app.presentation.delete.DeleteViewModel::class.java -> com.s3vault.app.presentation.delete.DeleteViewModel(container)
         else -> throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
     } as T
 }
@@ -228,6 +229,8 @@ data class BackupUiState(
     val auth: AuthStatus = AuthStatus.Missing,
     val configured: Boolean = false,
     val events: List<TransferEvent> = emptyList(),
+    /** Backed-up files on this device whose S3 preview is still missing. */
+    val previewBacklog: Int = 0,
 )
 
 class BackupViewModel(private val c: AppContainer) : ViewModel() {
@@ -256,7 +259,8 @@ class BackupViewModel(private val c: AppContainer) : ViewModel() {
         core, c.settings.needsCredentials, c.credentials.status, c.settings.s3Config, c.db.events().observeRecent(30),
     ) { base, needs, auth, cfg, events ->
         base.copy(needsCredentials = needs, auth = auth, configured = cfg != null, events = events.map { it.toDomain() })
-    }.eagerly(viewModelScope, BackupUiState())
+    }.combine(c.db.media().observeThumbnailBacklog()) { s, n -> s.copy(previewBacklog = n) }
+        .eagerly(viewModelScope, BackupUiState())
 
     fun backupPending() {
         viewModelScope.launch { c.backup.enqueuePending(c.settings.currentBackup().includeVideos) }
@@ -265,6 +269,9 @@ class BackupViewModel(private val c: AppContainer) : ViewModel() {
     fun resume() { viewModelScope.launch { c.backup.resume() } }
     fun retryFailed() { viewModelScope.launch { c.backup.retryFailed() } }
     fun cancelQueue() { viewModelScope.launch { c.backup.cancelQueued() } }
+
+    /** The backup worker also creates the missing previews once its queue is empty, under the same network rules. */
+    fun createPreviews() { viewModelScope.launch { c.scheduler.kickBackup(c.settings.currentBackup().wifiOnly) } }
 }
 
 // ---------------------------------------------------------------- Remote library
@@ -297,6 +304,10 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
 
     fun toggle(key: String) = selection.update { if (key in it) it - key else it + key }
     fun clearSelection() { selection.value = emptySet() }
+    fun selectAll(keys: List<String>) { selection.value = keys.toSet() }
+
+    /** Preview of one object without downloading the original (see RemotePreviewRepository for the lookup order). */
+    suspend fun loadPreview(obj: RemoteObject): com.s3vault.app.sync.PreviewResult = c.previews.load(obj)
 
     fun refresh() {
         viewModelScope.launch {
@@ -313,12 +324,16 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun restoreSelected() {
-        val keys = selection.value.toList()
+    fun restoreSelected() = restoreKeys(selection.value.toList())
+
+    fun restoreKeys(keys: List<String>) {
         viewModelScope.launch {
             val n = c.remoteLibrary.restore(keys)
             transient.update {
-                it.copy(message = "$n fotografía(s) en cola de restauración. Se guardarán como copias nuevas en Imágenes/S3Vault; nunca se sobrescribe un archivo existente.")
+                it.copy(
+                    message = if (n == 0) "Ya están en cola de restauración."
+                    else "$n elemento(s) en cola de restauración. Se guardarán como copias nuevas en Imágenes/S3Vault; nunca se sobrescribe un archivo existente.",
+                )
             }
             clearSelection()
         }
@@ -326,6 +341,7 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
 
     fun cancelRestore(key: String) { viewModelScope.launch { c.remoteLibrary.cancelRestore(listOf(key)) } }
     fun dismissMessage() = transient.update { it.copy(message = null) }
+    fun postMessage(text: String) = transient.update { it.copy(message = text) }
     fun dismissDetail() = transient.update { it.copy(detail = null) }
 
     /** HEAD request for the metadata dialog (one request, only when the user asks). */
@@ -461,6 +477,7 @@ class S3SettingsViewModel(private val c: AppContainer) : ViewModel() {
             c.settings.clearS3Config()
             c.scheduler.cancelBackup()
             c.scheduler.cancelRestore()
+            c.previews.clear()
             ui.update { S3UiState(loaded = true, resultOk = true, resultMessage = "Desconectado. Credenciales eliminadas de este dispositivo. Los objetos en S3 no se han tocado.") }
         }
     }
@@ -566,6 +583,7 @@ class GeneralSettingsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
     fun setIncludeVideos(v: Boolean) = change { c.settings.setIncludeVideos(v) }
+    fun setCloudPreviews(v: Boolean) = change { c.settings.setCloudPreviews(v) }
     fun setAutoBackup(v: Boolean) = change { c.settings.setAutoBackup(v) }
     fun setInterval(h: Int) = change { c.settings.setIntervalHours(h) }
     fun setConcurrency(n: Int) = change { c.settings.setMaxConcurrency(n) }
