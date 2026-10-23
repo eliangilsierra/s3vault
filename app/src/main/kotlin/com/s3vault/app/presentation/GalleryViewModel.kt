@@ -262,4 +262,3 @@ class LibraryViewerViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 }
-
