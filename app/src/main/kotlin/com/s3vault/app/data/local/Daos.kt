@@ -352,6 +352,13 @@ interface EventDao {
     @Insert
     suspend fun insert(e: TransferEventEntity)
 
+    @Query("SELECT COUNT(*) FROM transfer_events WHERE type = 'UPLOADED' AND timestampMs > :sinceMs")
+    fun observeUploadsSince(sinceMs: Long): Flow<Int>
+
+    /** Objects deleted from S3 since [sinceMs]; each event is named "N elementos", and SQLite reads the leading number. */
+    @Query("SELECT COALESCE(SUM(CAST(name AS INTEGER)), 0) FROM transfer_events WHERE type = 'CLOUD_DELETED' AND timestampMs > :sinceMs")
+    fun observeCloudDeletionsSince(sinceMs: Long): Flow<Int>
+
     @Query("DELETE FROM transfer_events WHERE id NOT IN (SELECT id FROM transfer_events ORDER BY timestampMs DESC, id DESC LIMIT :keep)")
     suspend fun trim(keep: Int)
 

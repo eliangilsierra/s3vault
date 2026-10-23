@@ -5,6 +5,8 @@ import com.s3vault.app.data.local.MediaItemEntity
 import com.s3vault.app.data.local.RemoteObjectEntity
 import com.s3vault.app.data.local.TransferEventEntity
 import com.s3vault.app.domain.RemoteKeys
+import com.s3vault.app.domain.S3Config
+import com.s3vault.app.domain.cost.StorageInventory
 import com.s3vault.app.domain.RemoteStorage
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.domain.TransferEventType
@@ -14,7 +16,8 @@ import com.s3vault.app.domain.library.DateSource
 import com.s3vault.app.domain.library.MediaKinds
 import java.time.ZoneId
 
-class RemoteContext(val storage: RemoteStorage, val keys: RemoteKeys)
+/** [config] is what the client was built for (bucket and region); null in tests that do not care. */
+class RemoteContext(val storage: RemoteStorage, val keys: RemoteKeys, val config: S3Config? = null)
 
 fun interface RemoteContextProvider {
     /** Null when S3 is not configured. */
@@ -33,6 +36,11 @@ data class ListingResult(val atMs: Long, val complete: Boolean, val count: Int)
  * still arriving and nothing larger than a page is held in memory. Objects missing from the bucket are pruned only after a
  * pass that reached the end, never after a failed or cancelled one.
  */
+/** Keeps the last complete inventory of the bucket (what the storage-cost estimate is computed from). */
+fun interface InventoryStore {
+    suspend fun save(inventory: StorageInventory)
+}
+
 class RemoteCatalog(
     private val db: AppDatabase,
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -40,6 +48,7 @@ class RemoteCatalog(
     private val onListed: suspend (ListingResult) -> Unit = {},
     /** The last pass that reached the end of the bucket, if known (lets a backup run skip a pointless second listing). */
     private val lastCompleteListing: suspend () -> ListingResult? = { null },
+    private val inventoryStore: InventoryStore? = null,
 ) {
     /** Returns the number of cached remote objects after refresh. */
     suspend fun refresh(ctx: RemoteContext): Int {
@@ -47,9 +56,12 @@ class RemoteCatalog(
         val seen = HashSet<String>()
         val z = zone()
         var pages = 0
+        // The same sweep feeds the cost estimate at no extra request, aggregated as the pages arrive (never held whole).
+        val inventory = inventoryStore?.let { StorageInventory.Accumulator(ctx.keys::isPhotoKey) }
         try {
             ctx.storage.listPhotosPaged { page ->
                 pages++
+                inventory?.add(page)
                 val previous = page.map { it.key }.chunked(500).flatMap { dao.getByKeys(it) }.associateBy { it.key }
                 val now = nowMs()
                 val entities = page.mapNotNull { l ->
@@ -67,6 +79,10 @@ class RemoteCatalog(
         val gone = dao.allKeys().filter { it !in seen }
         if (gone.isNotEmpty()) gone.chunked(500).forEach { dao.forget(it) } // cache rows only
         dao.applyLocalCaptureDates()
+        // Only a listing that reached the end becomes an inventory: a partial one would understate the bucket.
+        if (inventory != null) {
+            inventoryStore?.save(inventory.build(ctx.config?.region.orEmpty(), ctx.config?.bucket.orEmpty(), ctx.keys.prefix, nowMs(), pages))
+        }
         onListed(ListingResult(nowMs(), complete = true, count = seen.size))
         return seen.size
     }

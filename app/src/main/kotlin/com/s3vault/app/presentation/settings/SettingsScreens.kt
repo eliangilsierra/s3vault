@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -102,7 +103,7 @@ private fun SecureWindow() {
 }
 
 @Composable
-private fun SettingsScaffold(
+internal fun SettingsScaffold(
     title: String,
     onBack: () -> Unit,
     scrollState: ScrollState = rememberScrollState(),
@@ -125,7 +126,7 @@ private fun SettingsScaffold(
 // ------------------------------------------------------------------ Home
 
 @Composable
-fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit) {
+fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar("Ajustes") },
@@ -145,6 +146,14 @@ fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit
                 SettingsRow(
                     title = "Seguridad y credenciales", subtitle = "Credenciales temporales o claves estáticas, expiración y borrado",
                     icon = Icons.Filled.Lock, onClick = onSecurity,
+                )
+            }
+            SectionHeader("Almacenamiento")
+            SettingsGroup {
+                SettingsRow(
+                    title = "Almacenamiento y costes",
+                    subtitle = costSummary ?: "Cuánto ocupa tu bucket y una estimación de su coste mensual (no es tu factura)",
+                    icon = Icons.Filled.Savings, onClick = onCosts,
                 )
             }
             SectionHeader("Preferencias")

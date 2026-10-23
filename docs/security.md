@@ -21,6 +21,7 @@
 - Caché de vistas previas de S3 (`cacheDir/remote-previews`, máx. 96 MB, sin cifrar como cualquier caché de la app; se vacía al desconectar y Android puede borrarla).
 - Índice local (Room): ID de MediaStore, URI, nombre, tipo, tamaño, fechas, dimensiones, carpeta, `assetId`, hash SHA-256 (solo tras haberlo necesitado), clave remota, estado, último error (redactado), álbumes virtuales, registro de transferencias (máx. 200). **Sin secretos.**
 - Preferencias (DataStore): región, bucket, prefijo, método de autenticación, opciones de respaldo, tema. **Sin secretos.**
+- Último inventario del bucket para la estimación de costes (DataStore): cantidades y tamaños por clase de almacenamiento y por mes de subida, y el bucket que ya está en los ajustes. Sin credenciales, claves de objeto ni nombres de archivo; se borra al desconectar. Los precios van en la app y **no se consulta ningún servicio de precios** ([cost-estimate.md](cost-estimate.md)).
 - Credenciales: solo cifradas (archivo + Keystore).
 - Copias de seguridad de Android desactivadas (`allowBackup=false`, reglas de extracción vacías): ni el índice ni las credenciales viajan a la nube de Google.
 

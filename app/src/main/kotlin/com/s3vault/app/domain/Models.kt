@@ -123,7 +123,8 @@ data class CredentialsInfo(
         expiration != null && !now.isBefore(expiration)
 }
 
-enum class TransferEventType { UPLOADED, UPLOAD_FAILED, RESTORED, RESTORE_FAILED, PAUSED, CREDENTIALS_NEEDED }
+/** CLOUD_DELETED: objects the user deleted from S3 (name = "N elementos"). */
+enum class TransferEventType { UPLOADED, UPLOAD_FAILED, RESTORED, RESTORE_FAILED, PAUSED, CREDENTIALS_NEEDED, CLOUD_DELETED }
 
 data class TransferEvent(
     val id: Long,

@@ -49,6 +49,7 @@ class AppViewModelFactory(private val container: AppContainer) : ViewModelProvid
         S3SettingsViewModel::class.java -> S3SettingsViewModel(container)
         SecurityViewModel::class.java -> SecurityViewModel(container)
         GeneralSettingsViewModel::class.java -> GeneralSettingsViewModel(container)
+        com.s3vault.app.presentation.settings.StorageCostViewModel::class.java -> com.s3vault.app.presentation.settings.StorageCostViewModel(container)
         com.s3vault.app.presentation.delete.DeleteViewModel::class.java -> com.s3vault.app.presentation.delete.DeleteViewModel(container)
         else -> throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
     } as T

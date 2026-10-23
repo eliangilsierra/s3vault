@@ -14,6 +14,7 @@ import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
 import com.s3vault.app.domain.library.GroupBy
 import com.s3vault.app.domain.library.SortField
+import com.s3vault.app.domain.cost.StorageInventory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -52,6 +53,8 @@ data class LibraryPrefs(
     val density: GridDensity = GridDensity.MEDIUM,
     val cloudMode: CloudViewMode = CloudViewMode.GRID,
 )
+/** The last time the bucket inventory was tried: when, and why it failed (null = it worked). */
+data class InventoryAttempt(val atMs: Long, val error: String?)
 
 data class ConnectionStatus(
     val verifiedAtMs: Long?,
@@ -95,6 +98,9 @@ class AppSettings(private val context: Context) {
         val libCloudGroup = stringPreferencesKey("lib_cloud_group")
         val libDensity = stringPreferencesKey("lib_density")
         val libCloudMode = stringPreferencesKey("lib_cloud_mode")
+        val inventory = stringPreferencesKey("storage_inventory")
+        val inventoryAttemptMs = longPreferencesKey("storage_inventory_attempt_ms")
+        val inventoryError = stringPreferencesKey("storage_inventory_error")
     }
 
     val s3Config: Flow<S3Config?> = store.data.map { p ->
@@ -176,6 +182,26 @@ class AppSettings(private val context: Context) {
     suspend fun saveDensity(d: GridDensity) = store.edit { it[K.libDensity] = d.name }.let { }
     suspend fun saveCloudMode(m: CloudViewMode) = store.edit { it[K.libCloudMode] = m.name }.let { }
 
+    /** Last complete inventory of the bucket, or null if none was taken (or the stored one is unreadable). */
+    val inventory: Flow<StorageInventory?> = store.data.map { p -> p[K.inventory]?.let(InventoryCodec::decode) }
+
+    val inventoryAttempt: Flow<InventoryAttempt?> = store.data.map { p ->
+        p[K.inventoryAttemptMs]?.let { InventoryAttempt(it, p[K.inventoryError]) }
+    }
+
+    suspend fun saveInventory(i: StorageInventory) {
+        store.edit {
+            it[K.inventory] = InventoryCodec.encode(i)
+            it[K.inventoryAttemptMs] = i.takenAtMs
+            it.remove(K.inventoryError)
+        }
+    }
+
+    /** A failed attempt never replaces the last complete inventory; it is only remembered so the UI can say so. */
+    suspend fun saveInventoryFailure(atMs: Long, message: String) {
+        store.edit { it[K.inventoryAttemptMs] = atMs; it[K.inventoryError] = message.take(300) }
+    }
+
     suspend fun currentS3Config(): S3Config? = s3Config.first()
     suspend fun currentBackup(): BackupSettings = backup.first()
 
@@ -216,6 +242,7 @@ class AppSettings(private val context: Context) {
             it.remove(K.connVerifiedAt); it.remove(K.connOk); it.remove(K.connMessage)
             it[K.needsCredentials] = false
             it.remove(K.listedAt); it.remove(K.listedComplete); it.remove(K.listedCount)
+            it.remove(K.inventory); it.remove(K.inventoryAttemptMs); it.remove(K.inventoryError)
         }
     }
 }

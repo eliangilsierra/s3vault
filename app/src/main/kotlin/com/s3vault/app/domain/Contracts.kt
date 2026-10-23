@@ -30,7 +30,16 @@ data class UploadRequest(
 
 data class UploadResult(val etag: String?, val checksumSha256Base64: String?)
 
-data class RemoteListing(val key: String, val sizeBytes: Long, val lastModifiedMs: Long)
+data class RemoteListing(
+    val key: String,
+    val sizeBytes: Long,
+    val lastModifiedMs: Long,
+    /** S3 storage class reported by the listing (STANDARD, GLACIER_IR...); null when the listing did not say. */
+    val storageClass: String? = null,
+)
+
+/** A finished listing and how many `ListObjectsV2` requests it took. Behaves as a plain list. */
+class PagedListing(items: List<RemoteListing>, val requests: Int) : List<RemoteListing> by items
 
 data class PermissionCheck(val operation: String, val allowed: Boolean, val error: RemoteErrorKind?)
 
@@ -61,7 +70,11 @@ interface RemoteStorage {
     /** Exercises List, Put and Get against a small marker object. Never touches user photos. */
     suspend fun testPermissions(): PermissionReport
 
-    /** Lists every object under `{prefix}photos/`. */
+    /**
+     * Lists every object under `{prefix}photos/`, recognised photo keys or not (callers decide what to do with the
+     * rest: it is stored, and billed, all the same). Returns only when the listing is complete; a failure on any
+     * page throws, so a partial listing is never mistaken for a whole one. The result is a [PagedListing].
+     */
     suspend fun listPhotos(): List<RemoteListing>
 
     /**

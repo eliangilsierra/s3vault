@@ -4,9 +4,9 @@
 
 | Suite | Comando | Resultado |
 |---|---|---|
-| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **168 pruebas, 0 fallos** |
-| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **34 pruebas, 0 fallos** |
-| Lint | `./gradlew lintDebug` | 0 errores, 37 avisos (versiones/estilo) |
+| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **224 pruebas, 0 fallos** |
+| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **46 pruebas, 0 fallos** |
+| Lint | `./gradlew lintDebug` | 0 errores, 38 avisos (versiones/estilo) |
 | Build release con R8 | `./gradlew assembleRelease` | OK (≈ 4,9 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
 
 Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pasado sin haberse ejecutado. Lo que **no** se ha podido ejecutar está en [Validación manual pendiente](#validación-manual-pendiente).
@@ -38,6 +38,8 @@ Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pas
 | Vista previa sin descargar | `RemotePreviewRepositoryTest` (orden miniatura → EXIF con `Range` → «no disponible»; caché y fallos cacheados con caducidad; errores transitorios no se cachean; `403` = sin miniatura; objeto borrado en otro sitio = «no existe»; presupuesto de caché), e2e: el original **no** se pide (`getKeys`), una lectura `Range` de 128 KiB lee una miniatura EXIF real |
 | Borrado en S3 | `CloudDeletionTest` (objeto + miniatura, local intacto y marcado, no re-sube, miniatura compartida, fallos por clave y reintento, denegación IAM detiene los lotes, restauración en curso, claves no permitidas, cancelación entre lotes, progreso), `S3RemoteStorageTest` (`POST ?delete` real contra el SDK: XML, `Quiet`, errores por clave, rechazo sin enviar nada), e2e con `DeleteObjects` real sobre ART |
 | Borrado local | `LocalDeletionTest` (lo que Android borró de verdad se asienta; cancelar no cambia nada; parcial; S3 intacta), e2e con MediaStore real, `PhotoManagementUiTest` con el **diálogo real del sistema** |
+| Estimación de costes | `CostEstimatorTest` (tramos de Standard, GiB y no GB, mínimo de 128 KiB, sobrecarga de Glacier, Intelligent-Tiering, **sin total** con clase sin precio / región sin precios / inventario incompleto, vistas previas como suposición, niveles de confianza, solicitudes), `S3PricingTableTest` (cifras publicadas, las 36 regiones completas y con tramos coherentes), `StorageInventoryTest`, `InventoryCodecTest`, `CostFormatTest`, `CostPersistenceTest` (el listado que ya se hace alimenta el inventario; un fallo no lo guarda; DataStore; eventos de subida y borrado), `S3RemoteStorageTest` (clase de almacenamiento, número de solicitudes, fallo a mitad de listado) |
+| Pantalla de costes | `StorageCostUiTest` (12 flujos sobre la app real: sin inventario, cálculo, bucket vacío, clase sin precio, región sin precios, fallo que conserva lo anterior, cambios pendientes, inventario antiguo, otro bucket, sin S3, sin credenciales, ayuda) |
 | Migración de Room | `MigrationTest` (v1 → v2 desde el esquema exportado, valida Room al abrir) |
 | Flujos de UI | `PhotoManagementUiTest`: selección → «¿qué copia?» → confirmación → progreso → resultado; casilla obligatoria si solo existe en S3; IAM sin permiso explicada y reintento; biblioteca de S3 con miniaturas y visor |
 
@@ -99,4 +101,6 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - **Borrado local en Android 10 (API 29)** (`RecoverableSecurityException`, un diálogo por foto): implementado pero no ejecutado; el AVD es de API 37. En Android 11+ se probó con el diálogo real de `createDeleteRequest`, tanto a mano como en `PhotoManagementUiTest`.
 - Comportamiento real de `DeleteObjects` de AWS (la firma con suma de comprobación, un bucket con *Versioning* y reglas de ciclo de vida con `GLACIER_IR`): el servidor simulado cubre el protocolo y el SDK real, no las particularidades de AWS.
 - Miniaturas de HEIC/AVIF, RAW y vídeos largos en dispositivos reales (`ContentResolver.loadThumbnail` depende del códec del fabricante) y el tamaño real de miniatura con fotos de cámara (la estimación de 60 KB está sin medir en tu biblioteca).
+- **Precios reales de tu cuenta:** la estimación usa precios de lista; no se ha contrastado con una factura real de AWS ni con Cost Explorer.
+- Buckets con cientos de miles de objetos: el inventario hace una solicitud LIST por cada 1000 y se mantiene en memoria solo mientras se agrega; no se ha medido el tiempo con listados enormes.
 - Rendimiento del relleno de miniaturas con decenas de miles de fotos y con ahorro de batería (se hacen 300 por ejecución del *worker*).

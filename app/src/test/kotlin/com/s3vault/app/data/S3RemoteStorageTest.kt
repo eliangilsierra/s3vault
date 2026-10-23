@@ -103,11 +103,11 @@ class S3RemoteStorageTest {
         return b.build()
     }
 
-    private fun listResponse(vararg keys: String, truncatedToken: String? = null) = MockResponse.Builder().code(200).addHeader("Content-Type", XML).body(
+    private fun listResponse(vararg keys: String, truncatedToken: String? = null, storageClass: String = "STANDARD") = MockResponse.Builder().code(200).addHeader("Content-Type", XML).body(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>my-bucket</Name><Prefix>p</Prefix>" +
             "<KeyCount>${keys.size}</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>${truncatedToken != null}</IsTruncated>" +
             (truncatedToken?.let { "<NextContinuationToken>$it</NextContinuationToken>" } ?: "") +
-            keys.joinToString("") { "<Contents><Key>$it</Key><LastModified>2026-10-01T10:00:00.000Z</LastModified><ETag>&quot;e&quot;</ETag><Size>10</Size><StorageClass>STANDARD</StorageClass></Contents>" } +
+            keys.joinToString("") { "<Contents><Key>$it</Key><LastModified>2026-10-01T10:00:00.000Z</LastModified><ETag>&quot;e&quot;</ETag><Size>10</Size><StorageClass>$storageClass</StorageClass></Contents>" } +
             "</ListBucketResult>",
     ).build()
 
@@ -176,17 +176,27 @@ class S3RemoteStorageTest {
         assertFalse(report.allAllowed)
     }
 
-    @Test fun `listing only returns valid photo keys and follows pagination`() = runBlocking {
+    @Test fun `listing returns every object under photos with its storage class and follows pagination`() = runBlocking {
         val keys = RemoteKeys("p")
         val k1 = keys.photoKey(assetId, "b".repeat(64), "a.jpg")
         val k2 = keys.photoKey("c".repeat(32), "d".repeat(64), "b.jpg")
-        server.enqueue(listResponse(k1, "p/photos/garbage", truncatedToken = "tok"))
+        server.enqueue(listResponse(k1, "p/photos/garbage", truncatedToken = "tok", storageClass = "GLACIER_IR"))
         server.enqueue(listResponse(k2))
         val listed = storage("p").listPhotos()
-        assertEquals(listOf(k1, k2), listed.map { it.key })
+        // Unrecognised keys are stored (and billed) too: the caller decides what to do with them.
+        assertEquals(listOf(k1, "p/photos/garbage", k2), listed.map { it.key })
+        assertEquals(listOf("GLACIER_IR", "GLACIER_IR", "STANDARD"), listed.map { it.storageClass })
+        assertEquals("two ListObjectsV2 requests were needed", 2, (listed as com.s3vault.app.domain.PagedListing).requests)
         val first = server.takeRequest(); val second = server.takeRequest()
         assertTrue(first.url.toString().contains("photos"))
         assertTrue(second.url.toString().contains("continuation-token=tok"))
+    }
+
+    @Test fun `a listing that fails half way throws instead of returning a partial inventory`() {
+        val keys = RemoteKeys("p")
+        server.enqueue(listResponse(keys.photoKey(assetId, "b".repeat(64), "a.jpg"), truncatedToken = "tok"))
+        server.enqueue(error(403, "AccessDenied"))
+        assertEquals(RemoteErrorKind.ACCESS_DENIED, failure { storage("p").listPhotos() }.kind)
     }
 
     @Test fun `keys outside the configured prefix are refused without any request`() {

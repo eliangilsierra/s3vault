@@ -11,6 +11,7 @@ import com.s3vault.app.domain.AwsCredentialsProvider
 import com.s3vault.app.domain.DeleteReport
 import com.s3vault.app.domain.LocalFileReader
 import com.s3vault.app.domain.MediaKind
+import com.s3vault.app.domain.PagedListing
 import com.s3vault.app.domain.PermissionReport
 import com.s3vault.app.domain.RemoteErrorKind
 import com.s3vault.app.domain.RemoteException
@@ -47,7 +48,7 @@ class FakeCredentials : AwsCredentialsProvider {
 
 /** In-memory S3 stand-in with failure injection. [deleteCalls] records every delete so tests can prove what was (not) deleted. */
 class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
-    class Obj(val bytes: ByteArray, val sha256B64: String, val etag: String)
+    class Obj(val bytes: ByteArray, val sha256B64: String, val etag: String, val storageClass: String = "STANDARD")
 
     val objects = linkedMapOf<String, Obj>()
     val uploadedKeys = mutableListOf<String>()
@@ -79,7 +80,11 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
 
     override suspend fun listPhotos(): List<RemoteListing> {
         listFailure?.let { throw it }
-        return objects.filterKeys { keys.isPhotoKey(it) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), uploadTimes[k] ?: 1_000L) }
+        // Like S3: everything under photos/, recognised photo keys or not.
+        return PagedListing(
+            objects.filterKeys { it.startsWith(keys.photosPrefix) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), uploadTimes[k] ?: 1_000L, o.storageClass) },
+            requests = 1,
+        )
     }
 
     /** Upload time reported per key (defaults to 1000). */
@@ -232,7 +237,7 @@ class TestEnv(val prefix: String = "mi/prefijo/") {
         thumbnails = thumbnails, previewsEnabled = previewsEnabled,
     )
 
-    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted)
+    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted, events)
 
     fun restoreEngine(sink: RestoreSink, partDir: File) =
         RestoreEngine(db, provider, creds, sink, partDir, progress, events)
