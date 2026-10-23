@@ -287,8 +287,13 @@ fun S3SettingsScreen(vm: S3SettingsViewModel, onBack: () -> Unit, onSecurity: ()
                         )
                         Column(Modifier.weight(1f)) {
                             Text(c.operation, style = MaterialTheme.typography.bodyMedium)
-                            c.error?.let {
-                                Text(it.userMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            if (c.error != null) {
+                                Text(c.error.userMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            } else if (!c.allowed) {
+                                Text(
+                                    "No se pudo comprobar porque la escritura anterior falló.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

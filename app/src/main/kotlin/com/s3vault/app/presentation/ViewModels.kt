@@ -382,7 +382,14 @@ class S3SettingsViewModel(private val c: AppContainer) : ViewModel() {
         val report = c.connectionTester.testPermissions(cfg)
         val ok = report.allAllowed
         c.settings.saveConnectionResult(ok, if (ok) "Permisos correctos" else "Permisos incompletos", System.currentTimeMillis())
-        ui.update { it.copy(permissions = report, resultOk = ok, resultMessage = if (ok) "Los permisos mínimos (List, Put, Get) funcionan." else "Faltan permisos. Revisa la política IAM (docs/iam-policy.md).") }
+        val message = when {
+            ok -> "Los permisos mínimos (List, Put, Get) funcionan."
+            report.blockingError == RemoteErrorKind.WRONG_REGION ->
+                report.blockingError!!.userMessage + " Pulsa «Probar conexión» para ver la región correcta."
+            report.blockingError != null -> report.blockingError!!.userMessage
+            else -> "Faltan permisos. Revisa la política IAM (docs/iam-policy.md)."
+        }
+        ui.update { it.copy(permissions = report, resultOk = ok, resultMessage = message) }
     }
 
     private fun runTest(label: String, block: suspend (S3Config) -> Unit) {

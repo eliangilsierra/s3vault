@@ -36,6 +36,13 @@ data class PermissionCheck(val operation: String, val allowed: Boolean, val erro
 
 data class PermissionReport(val checks: List<PermissionCheck>) {
     val allAllowed: Boolean get() = checks.all { it.allowed }
+
+    /**
+     * The first failure whose cause is not a missing IAM permission (wrong region, bad or expired credentials,
+     * unknown bucket, network...). Telling the user to review the IAM policy in those cases would point at the wrong fix.
+     */
+    val blockingError: RemoteErrorKind?
+        get() = checks.firstOrNull { !it.allowed && it.error != null && it.error != RemoteErrorKind.ACCESS_DENIED }?.error
 }
 
 /** Object access scoped to the configured bucket and prefix. There is deliberately no delete operation. */
