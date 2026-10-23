@@ -57,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -171,6 +172,8 @@ fun RemoteScreen(
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val selecting = selected.isNotEmpty()
+    // How many of the selected objects also exist on this device (read from the database: the grid holds one page at a time).
+    val alsoLocal by produceState(0, selected) { value = if (selected.isEmpty()) 0 else vm.selectedObjects().count { it.availableLocally } }
     val layout = browse.layout
     val parsed = remember(query.search) { SearchParser.parse(query.search) }
     val chips = filterChips(query.filters) { vm.setFilters(it) }
@@ -199,7 +202,7 @@ fun RemoteScreen(
                 when (barMode) {
                     2 -> AppTopBar(
                         title = if (selected.size == 1) "1 seleccionada" else "${selected.size} seleccionadas",
-                        subtitle = "Se aplican a la lista descargada de S3",
+                        subtitle = if (alsoLocal == 0) "Solo existen en S3" else "$alsoLocal también en este dispositivo",
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                         actions = {
@@ -224,6 +227,7 @@ fun RemoteScreen(
                         text = searchText, onText = vm::setSearchText,
                         onClose = { searching = false; if (!query.isDefault) vm.resetAll() },
                         placeholder = "Nombre de archivo, fecha o tipo",
+                        actions = { FilterAction(query.filters.activeCount) { filterSheet = true } },
                     )
                     else -> AppTopBar(
                         title = "Biblioteca en S3",
@@ -261,7 +265,7 @@ fun RemoteScreen(
             if (s.configured && total > 0 && !selecting) {
                 ListingNote(
                     searchingOrFiltering = searching || !query.isDefault,
-                    objects = total, ago = listedAgo, complete = listing?.complete != false,
+                    shown = browse.total, objects = total, ago = listedAgo, complete = listing?.complete != false,
                 )
                 if (listing?.complete == false && !s.loading) {
                     StatusBanner(
@@ -388,9 +392,9 @@ fun RemoteScreen(
  * objects already downloaded, never on the bucket.
  */
 @Composable
-private fun ListingNote(searchingOrFiltering: Boolean, objects: Int, ago: String?, complete: Boolean) {
+private fun ListingNote(searchingOrFiltering: Boolean, shown: Int, objects: Int, ago: String?, complete: Boolean) {
     val text = if (searchingOrFiltering) {
-        "Busca solo en los ${count(objects)} objetos de la lista descargada" + (ago?.let { " ($it)" } ?: "") + ". No consulta S3."
+        "${count(shown)} de ${count(objects)} objetos de la lista descargada" + (ago?.let { " ($it)" } ?: "") + ". Buscar y filtrar no consulta S3."
     } else {
         "Lista descargada" + (ago?.let { " $it" } ?: "") + " · ${count(objects)} objetos" + if (complete) "" else " (incompleta)"
     }

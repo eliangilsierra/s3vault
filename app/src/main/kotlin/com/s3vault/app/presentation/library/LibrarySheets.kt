@@ -27,6 +27,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -100,9 +101,15 @@ fun LibraryFilterSheet(
     val today = remember { LocalDate.now() }
     LaunchedEffect(draft) { delay(120); count = countFor(draft) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    // Opens fully (never half-way): the apply button at the bottom must be on screen from the start.
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        // The button that applies the filters is outside the scrolling part: it is always on screen, however long the sheet is.
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Space.screen).padding(bottom = Space.l)) {
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = Space.screen).padding(bottom = Space.xl),
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Space.m),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -195,10 +202,11 @@ fun LibraryFilterSheet(
                 }
             }
 
-            PrimaryButton(
-                text = when (val n = count) { null -> "Mostrar resultados"; 0 -> "Sin resultados con estos filtros"; 1 -> "Mostrar 1 resultado"; else -> "Mostrar ${fmt(n)} resultados" },
-                onClick = { onApply(draft) }, modifier = Modifier.fillMaxWidth(),
-            )
+        }
+        PrimaryButton(
+            text = when (val n = count) { null -> "Mostrar resultados"; 0 -> "Sin resultados con estos filtros"; 1 -> "Mostrar 1 resultado"; else -> "Mostrar ${fmt(n)} resultados" },
+            onClick = { onApply(draft) }, modifier = Modifier.fillMaxWidth().padding(top = Space.m),
+        )
         }
     }
 
@@ -251,7 +259,10 @@ fun LibraryTimelineSheet(
     var expanded by remember { mutableStateOf(index.years.firstOrNull()?.year) }
     var pickDate by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Space.screen).padding(bottom = Space.l), verticalArrangement = Arrangement.spacedBy(Space.s)) {
             Text("Ir a una fecha", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
             if (index.years.isEmpty() && index.undated == 0) {

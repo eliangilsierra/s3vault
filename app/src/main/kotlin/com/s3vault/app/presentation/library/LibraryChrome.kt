@@ -2,9 +2,12 @@ package com.s3vault.app.presentation.library
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -139,6 +142,7 @@ fun LibrarySearchBar(
     onClose: () -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
     val manager = LocalFocusManager.current
@@ -162,6 +166,7 @@ fun LibrarySearchBar(
                 ),
             )
         },
+        actions = actions,
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     )
 }
@@ -206,7 +211,7 @@ fun ActiveChipsRow(
 
 // ------------------------------------------------------------------ view bar: grouping, sorting, density
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LibraryViewBar(
     group: GroupBy,
@@ -219,13 +224,16 @@ fun LibraryViewBar(
     modifier: Modifier = Modifier,
     trailing: @Composable () -> Unit = {},
 ) {
-    Row(
+    // A flow, not a row: on a narrow phone the segments, the order chip and the view buttons do not fit on one line, and a
+    // squeezed segmented control (cut-off labels) is worse than a second line.
+    FlowRow(
         modifier.fillMaxWidth().padding(horizontal = Space.screen, vertical = Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Space.s),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         val options = listOf(GroupBy.DAY, GroupBy.MONTH, GroupBy.YEAR)
-        SingleChoiceSegmentedButtonRow(Modifier.weight(1f).widthIn(max = 260.dp)) {
+        SingleChoiceSegmentedButtonRow(Modifier.width(228.dp)) {
             options.forEachIndexed { i, g ->
                 SegmentedButton(
                     selected = groupEnabled && group == g,

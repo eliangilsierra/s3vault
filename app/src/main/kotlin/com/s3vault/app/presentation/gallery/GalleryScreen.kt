@@ -220,6 +220,7 @@ fun GalleryScreen(
                         text = searchText, onText = vm::setSearchText,
                         onClose = { searching = false; if (!query.isDefault) vm.resetAll() },
                         placeholder = "Nombre, carpeta, fecha o tipo",
+                        actions = { FilterAction(query.filters.activeCount) { filterSheet = true } },
                     )
                     else -> AppTopBar(
                         title = "Galería",
