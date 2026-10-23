@@ -39,14 +39,14 @@ class MediaIndexer(
                         mediaStoreId = s.mediaStoreId, uri = s.uri, kind = s.kind, displayName = s.displayName,
                         mimeType = s.mimeType, sizeBytes = s.sizeBytes, dateModifiedSec = s.dateModifiedSec,
                         dateTakenMs = s.dateTakenMs, width = s.width, height = s.height, folderName = s.folderName,
-                        assetId = idGenerator(),
+                        assetId = idGenerator(), dayKey = s.dayKey, dateSource = s.dateSource,
                     )
                     continue
                 }
                 var next = old.copy(
                     uri = s.uri, displayName = s.displayName, mimeType = s.mimeType, sizeBytes = s.sizeBytes,
                     dateModifiedSec = s.dateModifiedSec, dateTakenMs = s.dateTakenMs, width = s.width,
-                    height = s.height, folderName = s.folderName, present = true,
+                    height = s.height, folderName = s.folderName, present = true, dayKey = s.dayKey, dateSource = s.dateSource,
                 )
                 // File reappeared after being REMOTE_ONLY.
                 if (old.syncState == SyncState.REMOTE_ONLY) {

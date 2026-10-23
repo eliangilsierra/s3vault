@@ -67,6 +67,7 @@ import com.s3vault.app.presentation.RemoteViewModel
 import com.s3vault.app.presentation.delete.DeleteHost
 import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.formatBytes
+import com.s3vault.app.presentation.library.ItemSource
 import com.s3vault.app.presentation.remote.PreviewState
 import com.s3vault.app.presentation.remote.RemoteDetailSheet
 import com.s3vault.app.presentation.remote.rememberPreviewState
@@ -85,8 +86,8 @@ import com.s3vault.app.sync.PreviewQuality
  */
 @Composable
 fun CloudViewerScreen(
-    items: List<RemoteObject>,
-    startKey: String,
+    items: ItemSource<RemoteObject>,
+    startIndex: Int,
     vm: RemoteViewModel,
     deleteVm: DeleteViewModel,
     onBack: () -> Unit,
@@ -97,13 +98,13 @@ fun CloudViewerScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val startIndex = remember(items.isEmpty()) { items.indexOfFirst { it.key == startKey }.coerceAtLeast(0) }
-    val pager = rememberPagerState(initialPage = startIndex) { items.size }
+    val pager = rememberPagerState(initialPage = startIndex.coerceAtLeast(0)) { items.size }
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf<RemoteObject?>(null) }
     val previews = remember { mutableStateMapOf<String, PreviewState>() }
-    val current = items.getOrNull(pager.currentPage)
+    val current = items[pager.currentPage]
+    LaunchedEffect(pager.currentPage, items.size) { items.ensure((pager.currentPage - 2).coerceAtLeast(0)..(pager.currentPage + 2)) }
 
     // Same immersive treatment as the local viewer: dark bars with light icons over the black canvas.
     val controller = remember(view) { (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view) } }
@@ -121,14 +122,15 @@ fun CloudViewerScreen(
     }
 
     var hadItems by remember { mutableStateOf(false) }
-    LaunchedEffect(items.size) { if (items.isNotEmpty()) hadItems = true else if (hadItems) onBack() }
+    LaunchedEffect(items.size) { if (items.size > 0) hadItems = true else if (hadItems) onBack() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
 
     val fade = tween<Float>(if (reduced) 0 else 180)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pager, userScrollEnabled = !zoomed, beyondViewportPageCount = 1, modifier = Modifier.fillMaxSize()) { page ->
-            val obj = items.getOrNull(page) ?: return@HorizontalPager
+            val obj = items[page]
+            if (obj == null) { Box(Modifier.fillMaxSize()); return@HorizontalPager }
             CloudPage(
                 obj = obj, active = page == pager.currentPage, vm = vm,
                 onState = { previews[obj.key] = it },

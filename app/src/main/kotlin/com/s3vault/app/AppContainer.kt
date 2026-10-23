@@ -24,10 +24,13 @@ import com.s3vault.app.sync.AlbumController
 import com.s3vault.app.sync.AlbumImporter
 import com.s3vault.app.sync.BackupController
 import com.s3vault.app.sync.BackupEngine
+import com.s3vault.app.sync.CloudDatesEngine
 import com.s3vault.app.sync.CloudDeletionController
+import com.s3vault.app.sync.DayKeyMaintainer
 import com.s3vault.app.sync.LocalDeletionController
 import com.s3vault.app.sync.RemotePreviewRepository
 import com.s3vault.app.sync.EventLog
+import com.s3vault.app.sync.InventoryStore
 import com.s3vault.app.sync.LibraryRepository
 import com.s3vault.app.sync.MediaAccess
 import com.s3vault.app.sync.RemoteCatalog
@@ -39,6 +42,7 @@ import com.s3vault.app.sync.RestoreSink
 import com.s3vault.app.sync.TransferProgress
 import com.s3vault.app.sync.WorkManagerScheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -57,12 +61,22 @@ class AppContainer(private val context: Context) {
     private val mediaSource by lazy { MediaStoreSource(context) }
 
     val library: LibraryRepository by lazy {
-        LibraryRepository(mediaSource, MediaIndexer(db)) { mediaAccess() }
+        LibraryRepository(mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() })
     }
-    val catalog by lazy { RemoteCatalog(db) }
+    val catalog by lazy {
+        RemoteCatalog(
+            db,
+            onListed = { settings.saveRemoteListing(it) },
+            lastCompleteListing = { settings.remoteListing.first()?.takeIf { it.complete } },
+            inventoryStore = InventoryStore { settings.saveInventory(it) },
+        )
+    }
+    val dayKeys by lazy { DayKeyMaintainer(db, settings) }
+    val libraryStore by lazy { com.s3vault.app.presentation.library.LibraryStore(settings) }
+    val cloudDates by lazy { CloudDatesEngine(db, remoteProvider, credentials, catalog) }
     val backup by lazy { BackupController(db, settings, scheduler) }
     val albums by lazy { AlbumController(db) }
-    val albumImporter by lazy { AlbumImporter(db, remoteProvider) }
+    val albumImporter by lazy { AlbumImporter(db, remoteProvider, refreshListing = { remoteLibrary.refresh() }) }
 
     /** Test-only (like [S3RemoteStorage]'s own parameter): points the app's S3 client at a local mock server. Never set in production. */
     @androidx.annotation.VisibleForTesting
@@ -76,7 +90,7 @@ class AppContainer(private val context: Context) {
     val previews by lazy { RemotePreviewRepository(File(context.cacheDir, "remote-previews"), remoteProvider, ExifThumbnailReader()) }
 
     /** Two separate, explicit deletions: S3 objects, and the settling of files Android removed from the device. */
-    val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider) { previews.evict(it) } }
+    val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider, { previews.evict(it) }, events) }
     val mediaGateway by lazy { MediaStoreGateway(context) }
     val localDeletion by lazy { LocalDeletionController(db, mediaGateway) }
 
@@ -130,7 +144,7 @@ private class CachingRemoteProvider(
         val ep = endpoint()
         if (config != cachedConfig || ep != cachedEndpoint) {
             (cached?.storage as? S3RemoteStorage)?.close()
-            cached = RemoteContext(S3RemoteStorage(config, credentials, ep), RemoteKeys(config.prefix))
+            cached = RemoteContext(S3RemoteStorage(config, credentials, ep), RemoteKeys(config.prefix), config)
             cachedConfig = config
             cachedEndpoint = ep
         }

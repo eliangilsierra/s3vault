@@ -3,6 +3,7 @@ package com.s3vault.app.sync
 import com.s3vault.app.domain.AlbumManifest
 import com.s3vault.app.domain.RemoteErrorKind
 import com.s3vault.app.domain.RemoteException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -131,5 +132,131 @@ class AlbumImporterTest {
         val r = importer.importFromRemote()
         assertTrue(r is AlbumImporter.Result.Invalid)
         assertTrue(env.db.albums().all().isEmpty())
+    }
+
+    // ---- Photos that exist only in S3 (a library migrated straight into the bucket).
+
+    private var listings = 0
+    private fun cloudImporter() = AlbumImporter(env.db, env.provider, refreshListing = { listings++; env.catalog.refresh(env.ctx) }) { env.now }
+
+    /** Puts a photo in the fake bucket under the app's own key layout, as the migration script does. */
+    private fun inBucket(id: Long, name: String = "IMG_$id.jpg"): String {
+        val bytes = photo(id)
+        val hash = sha(bytes)
+        env.remote.objects[env.keys.photoKey("%032x".format(id), hash, name)] = FakeRemote.Obj(bytes, "x", "etag-$id")
+        return hash
+    }
+
+    @Test fun `photos only in S3 join the album after listing the bucket once`() = runBlocking {
+        val a = inBucket(1)
+        val b = inBucket(2)
+        publish(manifest("Viaje" to listOf(a, b)))
+
+        val r = cloudImporter().importFromRemote() as AlbumImporter.Result.Imported
+
+        assertEquals(1, r.albumsCreated)
+        assertEquals(0, r.photosAdded)
+        assertEquals(2, r.cloudAdded)
+        assertEquals(0, r.photosUnmatched)
+        assertTrue(r.listedBucket)
+        assertEquals(1, listings)
+        val id = album("Viaje").id
+        assertEquals(setOf(a, b), env.db.albums().cloudMemberVersions(id).toSet())
+        assertEquals(2, env.db.albums().observeAlbumCloud(id).first().size)
+        assertEquals(2, env.db.albums().observeAlbums().first().single().itemCount)
+    }
+
+    @Test fun `an already cached listing is not requested again`() = runBlocking {
+        val a = inBucket(1)
+        env.catalog.refresh(env.ctx)
+        publish(manifest("Viaje" to listOf(a)))
+
+        val r = cloudImporter().importFromRemote() as AlbumImporter.Result.Imported
+
+        assertEquals(1, r.cloudAdded)
+        assertEquals(false, r.listedBucket)
+        assertEquals(0, listings)
+    }
+
+    @Test fun `photos found nowhere are reported and no empty album is created`() = runBlocking {
+        val here = inBucket(1)
+        publish(manifest("Viaje" to listOf(here, sha(photo(99))), "Fantasma" to listOf(sha(photo(98)))))
+
+        val r = cloudImporter().importFromRemote() as AlbumImporter.Result.Imported
+
+        assertEquals(1, r.cloudAdded)
+        assertEquals(2, r.photosUnmatched)
+        assertEquals(1, r.albumsSkipped)
+        assertEquals(3, r.manifestPhotos)
+        assertEquals(listOf("Viaje"), env.db.albums().all().map { it.name })
+    }
+
+    @Test fun `a device copy wins over the S3 one and replaces an earlier S3 membership`() = runBlocking {
+        val hash = inBucket(1)
+        publish(manifest("Viaje" to listOf(hash)))
+        cloudImporter().importFromRemote()
+        val id = album("Viaje").id
+        assertEquals(listOf(hash), env.db.albums().cloudMemberVersions(id))
+
+        env.index(env.scanned(1, bytes = photo(1)))
+        env.db.media().saveHash(1, hash, 10, 100)
+        val again = cloudImporter().importFromRemote() as AlbumImporter.Result.Imported
+
+        assertEquals(1, again.photosAdded)
+        assertEquals(0, again.cloudAdded)
+        assertEquals(listOf(1L), env.db.albums().memberIds(id))
+        assertTrue(env.db.albums().cloudMemberVersions(id).isEmpty())
+        assertEquals(1, env.db.albums().observeAlbums().first().single().itemCount)
+    }
+
+    @Test fun `an S3 member is not listed twice when the photo is also on the device`() = runBlocking {
+        val hash = inBucket(1)
+        publish(manifest("Viaje" to listOf(hash)))
+        cloudImporter().importFromRemote()
+        val id = album("Viaje").id
+
+        env.index(env.scanned(1, bytes = photo(1)))
+        env.db.media().saveHash(1, hash, 10, 100)
+        env.db.albums().addItems(listOf(com.s3vault.app.data.local.AlbumItemEntity(id, 1, env.now)))
+
+        assertTrue(env.db.albums().observeAlbumCloud(id).first().isEmpty())
+        assertEquals(1, env.db.albums().observeAlbums().first().single().itemCount)
+    }
+
+    @Test fun `removing an S3 member leaves the object in the bucket`() = runBlocking {
+        val hash = inBucket(1)
+        publish(manifest("Viaje" to listOf(hash)))
+        cloudImporter().importFromRemote()
+        val id = album("Viaje").id
+
+        AlbumController(env.db) { env.now }.removeCloud(id, listOf(hash))
+
+        assertTrue(env.db.albums().cloudMemberVersions(id).isEmpty())
+        assertEquals(1, env.remote.objects.keys.count { it.startsWith(env.keys.photosPrefix) })
+    }
+
+    @Test fun `an S3 member disappears from the album when the object leaves the listing, and a deletion forgets it`() = runBlocking {
+        val a = inBucket(1)
+        val b = inBucket(2)
+        publish(manifest("Viaje" to listOf(a, b)))
+        cloudImporter().importFromRemote()
+        val id = album("Viaje").id
+        val keyOfA = env.db.remote().getAll().first { it.versionId == a }.key
+
+        env.cloudDeletion().delete(listOf(keyOfA))
+
+        assertEquals(listOf(b), env.db.albums().cloudMemberVersions(id))
+        assertEquals(1, env.db.albums().observeAlbums().first().single().itemCount)
+    }
+
+    @Test fun `the cover of an album with no photo on the device is an S3 photo`() = runBlocking {
+        val hash = inBucket(1)
+        publish(manifest("Viaje" to listOf(hash)))
+        cloudImporter().importFromRemote()
+
+        val row = env.db.albums().observeAlbums().first().single()
+
+        assertEquals(null, row.coverUri)
+        assertEquals(env.db.remote().getAll().single().key, row.coverRemoteKey)
     }
 }

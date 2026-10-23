@@ -12,8 +12,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,21 +23,23 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +59,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,14 +73,32 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.s3vault.app.domain.MediaItem
-import com.s3vault.app.domain.SyncState
+import com.s3vault.app.domain.library.DateKeys
+import com.s3vault.app.domain.library.LibraryScope
+import com.s3vault.app.domain.library.SearchParser
+import com.s3vault.app.domain.library.SortField
 import com.s3vault.app.presentation.GalleryViewModel
 import com.s3vault.app.presentation.GridSkeleton
-import com.s3vault.app.presentation.MediaGrid
+import com.s3vault.app.presentation.MediaCell
 import com.s3vault.app.presentation.delete.DeleteHost
 import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.delete.toDeleteEntry
+import com.s3vault.app.presentation.library.ActiveChipsRow
+import com.s3vault.app.presentation.library.CellSkeleton
+import com.s3vault.app.presentation.library.DensityMenu
+import com.s3vault.app.presentation.library.FilterAction
+import com.s3vault.app.presentation.library.FilterSheetConfig
+import com.s3vault.app.presentation.library.LibraryFilterSheet
+import com.s3vault.app.presentation.library.LibraryGrid
+import com.s3vault.app.presentation.library.LibrarySearchBar
+import com.s3vault.app.presentation.library.LibraryTimelineSheet
+import com.s3vault.app.presentation.library.LibraryViewBar
+import com.s3vault.app.presentation.library.NoResults
+import com.s3vault.app.presentation.library.SearchAction
+import com.s3vault.app.presentation.library.SectionHeading
+import com.s3vault.app.presentation.library.TimelineAction
+import com.s3vault.app.presentation.library.TimelineIndex
+import com.s3vault.app.presentation.library.filterChips
 import com.s3vault.app.presentation.shareMedia
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.ui.AppTopBar
@@ -88,6 +110,7 @@ import com.s3vault.app.presentation.ui.StatusBanner
 import com.s3vault.app.presentation.ui.Tone
 import com.s3vault.app.presentation.ui.rememberReducedMotion
 import com.s3vault.app.sync.MediaAccess
+import kotlinx.coroutines.launch
 
 private fun requiredPermissions(): Array<String> = when {
     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -97,19 +120,7 @@ private fun requiredPermissions(): Array<String> = when {
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
-/** Backup activity visible in the library, derived only from the sync state Room already confirmed. */
-private data class BackupGlance(val active: Int, val failed: Int)
-
-private fun glanceOf(items: List<MediaItem>): BackupGlance {
-    var active = 0
-    var failed = 0
-    for (i in items) when (i.syncState) {
-        SyncState.QUEUED, SyncState.UPLOADING, SyncState.VERIFYING -> active++
-        SyncState.FAILED -> failed++
-        else -> Unit
-    }
-    return BackupGlance(active, failed)
-}
+private fun count(n: Int) = "%,d".format(java.util.Locale.forLanguageTag("es"), n)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,11 +132,25 @@ fun GalleryScreen(
     onOpenCredentials: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val browse by vm.browse.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val searchText by vm.searchInput.collectAsStateWithLifecycle()
+    val density by vm.density.collectAsStateWithLifecycle()
     val uploads by vm.uploads.collectAsStateWithLifecycle()
+    val summary by vm.selectionSummary.collectAsStateWithLifecycle()
+    val total by vm.totalInLibrary.collectAsStateWithLifecycle()
+    val folders by vm.folders.collectAsStateWithLifecycle()
+    val glance by vm.backupGlance.collectAsStateWithLifecycle()
+    val sectionSelection by vm.sectionSelection.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var albumSheet by remember { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
+    var searching by rememberSaveable { mutableStateOf(query.search.isNotEmpty()) }
+    var filterSheet by remember { mutableStateOf(false) }
+    var timelineSheet by remember { mutableStateOf(false) }
+    val gridState = rememberLazyGridState()
     val reduced = rememberReducedMotion()
     val haptics = LocalHapticFeedback.current
 
@@ -136,33 +161,42 @@ fun GalleryScreen(
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); vm.dismissMessage() }
     }
+    // A different search, filter or order starts at the top: staying halfway down a new list would be disorienting.
+    LaunchedEffect(query) { gridState.scrollToItem(0) }
 
-    val items = state.items
     val selectionMode = state.selected.isNotEmpty()
-    // Back leaves selection mode first instead of closing the app.
+    val parsed = remember(query.search) { SearchParser.parse(query.search) }
+    val chips = filterChips(query.filters) { vm.setFilters(it) }
+    val layout = browse.layout
+    // Back leaves selection mode first, then the search, instead of closing the app.
     BackHandler(enabled = selectionMode) { vm.clearSelection() }
-    val glance = remember(items) { items?.let(::glanceOf) ?: BackupGlance(0, 0) }
+    BackHandler(enabled = !selectionMode && searching) { searching = false; if (query.isDefault) Unit else vm.resetAll() }
+
+    fun jumpTo(section: Int?) {
+        if (section != null) scope.launch { gridState.scrollToItem(layout.entryOfSection(section)) }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Crossfade(targetState = selectionMode, animationSpec = tween(if (reduced) 0 else 150), label = "galleryBar") { selecting ->
-                if (selecting) {
-                    val chosen = state.items.orEmpty().filter { it.mediaStoreId in state.selected }
-                    val inCloud = chosen.count { it.remoteKey != null }
-                    AppTopBar(
+            Crossfade(
+                targetState = if (selectionMode) 2 else if (searching) 1 else 0,
+                animationSpec = tween(if (reduced) 0 else 150), label = "galleryBar",
+            ) { mode ->
+                when (mode) {
+                    2 -> AppTopBar(
                         title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
                         subtitle = when {
-                            inCloud == 0 -> "Solo en este dispositivo"
-                            inCloud == chosen.size -> "Todas con copia en S3"
-                            else -> "$inCloud con copia en S3 · ${chosen.size - inCloud} sin copia"
+                            summary.inCloud == 0 -> "Solo en este dispositivo"
+                            summary.inCloud == summary.total -> "Todas con copia en S3"
+                            else -> "${summary.inCloud} con copia en S3 · ${summary.total - summary.inCloud} sin copia"
                         },
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                         actions = {
-                            IconButton(onClick = { vm.selectAll(state.items.orEmpty().map { it.mediaStoreId }) }) { Icon(Icons.Filled.SelectAll, "Seleccionar todo") }
+                            IconButton(onClick = vm::selectAllMatching) { Icon(Icons.Filled.SelectAll, "Seleccionar todo") }
                             IconButton(onClick = vm::backupSelected) { Icon(Icons.Filled.CloudUpload, "Respaldar en S3") }
-                            IconButton(onClick = { deleteVm.request(chosen.map { it.toDeleteEntry() }) }) {
+                            IconButton(onClick = { scope.launch { deleteVm.request(vm.selectedItems().map { it.toDeleteEntry() }) } }) {
                                 Icon(Icons.Filled.Delete, "Eliminar…", tint = MaterialTheme.colorScheme.error)
                             }
                             Box {
@@ -176,16 +210,30 @@ fun GalleryScreen(
                                     DropdownMenuItem(
                                         text = { Text("Compartir") },
                                         leadingIcon = { Icon(Icons.Filled.Share, null) },
-                                        onClick = { overflow = false; shareMedia(ctx, chosen) },
+                                        onClick = { overflow = false; scope.launch { shareMedia(ctx, vm.selectedItems()) } },
                                     )
                                 }
                             }
                         },
                     )
-                } else {
-                    AppTopBar(
+                    1 -> LibrarySearchBar(
+                        text = searchText, onText = vm::setSearchText,
+                        onClose = { searching = false; if (!query.isDefault) vm.resetAll() },
+                        placeholder = "Nombre, carpeta, fecha o tipo",
+                        actions = { FilterAction(query.filters.activeCount) { filterSheet = true } },
+                    )
+                    else -> AppTopBar(
                         title = "Galería",
-                        subtitle = items?.takeIf { it.isNotEmpty() }?.let { if (it.size == 1) "1 elemento" else "${it.size} elementos" },
+                        subtitle = when {
+                            total == 0 -> null
+                            query.isDefault -> if (total == 1) "1 elemento" else "${count(total)} elementos"
+                            else -> "${count(browse.total)} de ${count(total)}"
+                        },
+                        actions = {
+                            SearchAction { searching = true }
+                            if (layout.hasHeaders) TimelineAction { timelineSheet = true }
+                            FilterAction(query.filters.activeCount) { filterSheet = true }
+                        },
                     )
                 }
             }
@@ -193,6 +241,12 @@ fun GalleryScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            if (!selectionMode) {
+                ActiveChipsRow(
+                    searchChips = parsed.chips, filterChips = chips,
+                    onRemoveSearch = vm::removeSearchChip, onClearAll = vm::resetAll,
+                )
+            }
             if (state.access == MediaAccess.PARTIAL) {
                 StatusBanner(
                     tone = Tone.Info,
@@ -203,8 +257,29 @@ fun GalleryScreen(
                     modifier = Modifier.padding(horizontal = Space.screen, vertical = Space.s),
                 )
             }
-            if (!selectionMode && (glance.active > 0 || glance.failed > 0)) {
-                BackupGlanceChip(glance, onOpenBackup, Modifier.padding(horizontal = Space.screen, vertical = Space.xs))
+            if (!selectionMode && !searching && (glance.first > 0 || glance.second > 0)) {
+                BackupGlanceChip(glance.first, glance.second, onOpenBackup, Modifier.padding(horizontal = Space.screen, vertical = Space.xs))
+            }
+            if (!selectionMode && state.access != MediaAccess.NONE && total > 0) {
+                LibraryViewBar(
+                    group = query.group,
+                    groupEnabled = layout.hasHeaders || query.sort == SortField.CAPTURE_DATE,
+                    onGroup = vm::setGroup,
+                    sort = query.sort, descending = query.descending, sortFields = LibraryScope.LOCAL.sortFields,
+                    onSort = vm::setSort,
+                ) { DensityMenu(density, vm::setDensity) }
+            }
+            if (searching && !selectionMode && query.isDefault && searchText.isEmpty()) {
+                SearchHints(
+                    years = remember(browse.days) { TimelineIndex(browse.days).years.take(8) },
+                    onPick = { vm.setSearchText(it) },
+                )
+            } else if (searching && !selectionMode && !query.isDefault) {
+                Text(
+                    if (browse.total == 1) "1 resultado en este dispositivo" else "${count(browse.total)} resultados en este dispositivo",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Space.screen, vertical = Space.xs),
+                )
             }
             when {
                 state.access == MediaAccess.NONE -> EmptyState(
@@ -218,35 +293,47 @@ fun GalleryScreen(
                         ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)))
                     })
                 }
-                items == null -> GridSkeleton()
-                state.error != null && items.isEmpty() -> EmptyState(
+                !browse.ready -> GridSkeleton()
+                state.error != null && total == 0 -> EmptyState(
                     icon = Icons.Filled.ErrorOutline,
                     tone = Tone.Error,
                     title = "No se pudo cargar la galería",
                     body = state.error,
                 ) { PrimaryButton("Reintentar", vm::refresh, Modifier.fillMaxWidth()) }
-                items.isEmpty() -> if (state.refreshing) GridSkeleton() else EmptyState(
+                total == 0 -> if (state.refreshing) GridSkeleton() else EmptyState(
                     icon = Icons.Filled.PhotoLibrary,
                     title = "No hay fotos",
                     body = "Cuando haya fotos o vídeos en el dispositivo aparecerán aquí.",
                 )
+                browse.total == 0 -> NoResults(
+                    hint = noResultsHint(parsed.hasDate, query.filters.activeCount > 0, parsed.textTerms.isNotEmpty()),
+                    onReset = { vm.resetAll() },
+                )
                 else -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
-                    MediaGrid(
-                        items = items,
-                        selected = state.selected,
-                        uploads = uploads,
-                        onClick = { if (selectionMode) vm.toggle(it.mediaStoreId) else onOpen(it.mediaStoreId) },
-                        onLongClick = {
-                            if (!selectionMode) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            vm.toggle(it.mediaStoreId)
+                    LibraryGrid(
+                        layout = layout, source = vm.window, minCell = density.minCellDp.dp, state = gridState,
+                        header = { s ->
+                            val section = layout.sections[s]
+                            SectionHeading(
+                                label = layout.sectionLabel(s), count = section.count, selectionMode = selectionMode,
+                                sectionSelected = section.key in sectionSelection, onToggleSection = { vm.toggleSection(s) },
+                            )
+                        },
+                        cell = { _, item ->
+                            if (item == null) CellSkeleton() else MediaCell(
+                                item, item.mediaStoreId in state.selected, selectionMode, uploads[item.mediaStoreId],
+                                onClick = { if (selectionMode) vm.toggle(it.mediaStoreId) else onOpen(it.mediaStoreId) },
+                                onLongClick = {
+                                    if (!selectionMode) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.toggle(it.mediaStoreId)
+                                },
+                            )
                         },
                     )
                 }
             }
         }
     }
-
-    DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenCredentials)
 
     if (albumSheet) {
         AddToAlbumSheet(
@@ -256,16 +343,73 @@ fun GalleryScreen(
             onDismiss = { albumSheet = false },
         )
     }
+
+    if (filterSheet) {
+        val undated by vm.undatedCount.collectAsStateWithLifecycle()
+        LibraryFilterSheet(
+            initial = query.filters,
+            config = FilterSheetConfig(LibraryScope.LOCAL, folders, undated),
+            countFor = vm::countFor,
+            onApply = { vm.setFilters(it); filterSheet = false },
+            onDismiss = { filterSheet = false },
+        )
+    }
+
+    if (timelineSheet) {
+        LibraryTimelineSheet(
+            index = remember(browse.days) { TimelineIndex(browse.days) },
+            onMonth = { timelineSheet = false; jumpTo(layout.sectionOfMonth(it)) },
+            onYear = { timelineSheet = false; jumpTo(layout.sectionOfYear(it)) },
+            onDate = { day ->
+                timelineSheet = false
+                layout.sectionNear(day, query.descending)?.let { (section, exact) ->
+                    jumpTo(section)
+                    if (!exact) scope.launch { snackbar.showSnackbar("No hay fotos el ${DateKeys.shortDayLabel(day)}: se muestra la fecha más cercana.") }
+                }
+            },
+            onUndated = null, undatedLabel = "",
+            onDismiss = { timelineSheet = false },
+        )
+    }
+
+    DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenCredentials)
+}
+
+/** Says why nothing matched and what to try, so an empty result is never a dead end. */
+private fun noResultsHint(date: Boolean, filters: Boolean, text: Boolean): String = buildString {
+    append("Nada coincide con lo que has pedido.")
+    if (text) append(" Prueba con otra parte del nombre.")
+    if (date) append(" Comprueba el año o el mes: solo se muestran fechas en las que hay fotos.")
+    if (filters) append(" Quita algún filtro para ampliar el resultado.")
+}
+
+/** Shown while the search is empty: what can be searched and the years that exist, one tap away. */
+@Composable
+private fun SearchHints(years: List<com.s3vault.app.presentation.library.YearEntry>, onPick: (String) -> Unit) {
+    Column(Modifier.padding(horizontal = Space.screen, vertical = Space.s), verticalArrangement = Arrangement.spacedBy(Space.s)) {
+        Text("Qué puedes buscar", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "• Nombre de archivo o carpeta: IMG, WhatsApp\n• Fecha: 2023, marzo 2023, 15/03/2023, 15 de marzo\n• Tipo: fotos, vídeos\nTodo se busca en este dispositivo.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (years.isNotEmpty()) {
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                items(years, key = { it.year }) { y ->
+                    AssistChip(onClick = { onPick(y.year.toString()) }, label = { Text("${y.year} · ${count(y.count)}") })
+                }
+            }
+        }
+    }
 }
 
 /** One quiet line above the grid, only while there is real backup activity or a failure to look at. */
 @Composable
-private fun BackupGlanceChip(glance: BackupGlance, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val failing = glance.failed > 0
+private fun BackupGlanceChip(active: Int, failed: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val failing = failed > 0
     val label = buildString {
-        if (glance.active > 0) append(if (glance.active == 1) "1 en cola o subiendo" else "${glance.active} en cola o subiendo")
-        if (glance.active > 0 && failing) append(" · ")
-        if (failing) append(if (glance.failed == 1) "1 con error" else "${glance.failed} con error")
+        if (active > 0) append(if (active == 1) "1 en cola o subiendo" else "$active en cola o subiendo")
+        if (active > 0 && failing) append(" · ")
+        if (failing) append(if (failed == 1) "1 con error" else "$failed con error")
     }
     Surface(
         onClick = onClick,

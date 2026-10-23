@@ -19,6 +19,8 @@ class LibraryRepository(
     private val scanner: MediaScanSource,
     private val indexer: MediaIndexer,
     private val access: () -> MediaAccess,
+    /** Runs before every scan (e.g. rewrite day keys after a time zone change). */
+    private val beforeScan: suspend () -> Unit = {},
 ) {
     private val mutex = Mutex()
 
@@ -26,6 +28,7 @@ class LibraryRepository(
     suspend fun refresh(): IndexResult? = mutex.withLock {
         val a = access()
         if (a == MediaAccess.NONE) return null
+        beforeScan()
         indexer.reconcile(scanner.scan(), fullAccess = a == MediaAccess.FULL)
     }
 }
@@ -126,6 +129,11 @@ class RemoteLibraryController(
     }
 
     suspend fun hasLocalCopy(versionId: String): Boolean = db.media().countLocalWithHash(versionId) > 0
+
+    /** Opt-in: reads the capture date of the objects that have none (one HEAD each, resumable, WorkManager). */
+    suspend fun completeCaptureDates() = scheduler.kickCloudDates(settings.currentBackup().wifiOnly)
+
+    fun cancelCaptureDates() = scheduler.cancelCloudDates()
 }
 
 class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long = System::currentTimeMillis) {
@@ -140,4 +148,7 @@ class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long
 
     /** Removes membership only; the photo file is untouched. */
     suspend fun remove(albumId: Long, mediaIds: List<Long>) = db.albums().removeItems(albumId, mediaIds)
+
+    /** Removes the membership of S3-only photos (by content hash); the objects in S3 are untouched. */
+    suspend fun removeCloud(albumId: Long, versionIds: List<String>) = db.albums().removeRemoteItems(albumId, versionIds)
 }
