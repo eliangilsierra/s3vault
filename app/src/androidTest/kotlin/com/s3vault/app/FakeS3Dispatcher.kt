@@ -15,7 +15,14 @@ import java.util.concurrent.ConcurrentHashMap
  * only when [allowDelete] is true, which mirrors an IAM policy that grants (or withholds) s3:DeleteObject.
  */
 class FakeS3Dispatcher(private val bucket: String, private val allowedPrefix: String = "") : Dispatcher() {
-    class Obj(val bytes: ByteArray, val sha256B64: String, val contentType: String, val meta: Map<String, String>)
+    /**
+     * [storageClass] and [listedSize] only affect what ListObjectsV2 reports (so a test can list 500 GiB without
+     * holding it in memory); the bytes served by GET/HEAD are always [bytes].
+     */
+    class Obj(
+        val bytes: ByteArray, val sha256B64: String, val contentType: String, val meta: Map<String, String>,
+        val storageClass: String = "STANDARD", val listedSize: Long? = null,
+    )
 
     val objects = ConcurrentHashMap<String, Obj>()
     val methods = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -81,7 +88,7 @@ class FakeS3Dispatcher(private val bucket: String, private val allowedPrefix: St
             append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">")
             append("<Name>$bucket</Name><Prefix>$prefix</Prefix><KeyCount>${matches.size}</KeyCount><MaxKeys>$max</MaxKeys><IsTruncated>false</IsTruncated>")
             matches.forEach { (k, o) ->
-                append("<Contents><Key>$k</Key><LastModified>2026-10-21T07:28:00.000Z</LastModified><ETag>&quot;e&quot;</ETag><Size>${o.bytes.size}</Size><StorageClass>STANDARD</StorageClass></Contents>")
+                append("<Contents><Key>$k</Key><LastModified>2026-10-21T07:28:00.000Z</LastModified><ETag>&quot;e&quot;</ETag><Size>${o.listedSize ?: o.bytes.size.toLong()}</Size><StorageClass>${o.storageClass}</StorageClass></Contents>")
             }
             append("</ListBucketResult>")
         }

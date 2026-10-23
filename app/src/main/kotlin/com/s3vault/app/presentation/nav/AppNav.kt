@@ -76,6 +76,9 @@ import com.s3vault.app.presentation.settings.GeneralSettingsScreen
 import com.s3vault.app.presentation.settings.S3SettingsScreen
 import com.s3vault.app.presentation.settings.SecurityScreen
 import com.s3vault.app.presentation.settings.SettingsHome
+import com.s3vault.app.presentation.settings.StorageCostScreen
+import com.s3vault.app.presentation.settings.StorageCostViewModel
+import com.s3vault.app.presentation.settings.summaryLine
 import com.s3vault.app.presentation.viewer.ViewerScreen
 import kotlinx.coroutines.launch
 
@@ -208,10 +211,21 @@ fun AppRoot(container: AppContainer) {
                 )
             }
             composable(Tab.Settings.route) {
+                val costVm: StorageCostViewModel = viewModel(factory = factory)
+                val cost by costVm.state.collectAsStateWithLifecycle()
                 SettingsHome(
                     onS3 = { nav.navigate("settings/s3") },
                     onSecurity = { nav.navigate("settings/security") },
                     onGeneral = { nav.navigate("settings/general") },
+                    onCosts = { nav.navigate("settings/costs") },
+                    costSummary = cost.summaryLine(),
+                )
+            }
+            composable("settings/costs") {
+                val vm: StorageCostViewModel = viewModel(factory = factory)
+                StorageCostScreen(
+                    vm, onBack = { nav.popBackStack() },
+                    onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenSecurity = { nav.navigate("settings/security") },
                 )
             }
             composable("settings/s3") {
