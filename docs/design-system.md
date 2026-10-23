@@ -57,6 +57,19 @@ Se aplicó `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, estados de carga 
 - **Visor de fotos de S3.** Mismo lienzo inmersivo que el visor local. Una etiqueta dice qué se está viendo («Vista previa · no es el original», «Miniatura incrustada · muy baja resolución», «Sin vista previa»); los estados de carga, sin vista previa y error ocupan el lugar de la foto, con su acción (*Restaurar (tamaño)*, *Reintentar*).
 - **Componentes nuevos:** `DeleteHost` (hoja, diálogos, progreso y resultado compartidos por Galería, Álbumes, visor y S3), `ZoomableBox` (gesto de zoom compartido), `RemoteThumb`, `RemoteDetailSheet`, `CloudViewerScreen`.
 
+## Galería inteligente: búsqueda, filtros y organización
+
+Misma estructura en las dos galerías (`presentation/library`), para que lo aprendido en una sirva en la otra.
+
+- **Barra superior con tres modos:** normal (título, recuento «N de M» si hay filtros, buscar, ir a fecha, filtros), búsqueda (el campo ocupa la barra y dice qué se busca) y selección. El cambio entre modos es un fundido de 150 ms (0 con animaciones desactivadas).
+- **Chips de lo activo:** una fila bajo la barra con cómo se entendió la búsqueda y cada filtro; cada chip se quita de uno en uno y hay «Borrar todo». Nada filtra sin que se vea.
+- **Barra de vista:** segmentos Día/Mes/Año (desactivados cuando el orden no es por fecha), chip de orden con su resumen en lenguaje llano («Recientes primero») y, a la derecha, densidad y, en S3, lista/cuadrícula.
+- **Hoja de filtros:** solo ofrece lo que el metadato responde; el botón principal anuncia cuántos resultados daría («Mostrar 24 resultados» o «Sin resultados con estos filtros») antes de aplicar. Notas breves donde un filtro tiene límites (S3: el tipo se deduce de la extensión; los objetos sin fecha de captura no entran en filtros de fecha).
+- **Ir a una fecha:** años con meses y recuentos, «Todo 2023» y selector de día exacto; el desplazador rápido del borde muestra la fecha de la sección y solo aparece con listas largas.
+- **Encabezados de sección** con nombre, recuento y, en modo selección, un control para seleccionar toda la sección; el de «Sin fecha de captura» lleva una nota («Ordenadas por fecha de subida»).
+- **Alcance siempre visible en S3:** línea «Lista descargada hace 5 min · N objetos» y, al buscar o filtrar, «Busca solo en los N objetos de la lista descargada. No consulta S3.». Avisos propios para lista incompleta y para error de actualización (con la lista antigua visible). La tarjeta «Completar fechas» enseña el coste antes de pedir confirmación.
+- **Componentes nuevos:** `LibraryGrid`, `SectionHeading`, `TimelineScroller`, `CellSkeleton`, `LibrarySearchBar`, `ActiveChipsRow`, `LibraryViewBar`, `LibraryFilterSheet`, `LibraryTimelineSheet`, `NoResults`.
+
 ## Panel de costes estimados
 
 Ajustes → Almacenamiento y costes (`StorageCostScreen`). Misma estructura que el resto de Ajustes (`SettingsScaffold`, `SettingsGroup`, `StatusBanner`, `SectionHeader`).

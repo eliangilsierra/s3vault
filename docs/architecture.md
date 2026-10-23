@@ -5,14 +5,16 @@ Un único módulo Gradle (`:app`) con paquetes por responsabilidad. Suficiente p
 ```
 com.s3vault.app
 ├── domain/          modelos, máquina de estados, claves S3, validación, errores, contratos (RemoteStorage, AwsCredentialsProvider)
+│   ├── library/     fechas (origen y claves de día), analizador de búsqueda, filtros y consulta de la galería: código puro
 │   └── cost/        inventario del bucket, tabla de precios (generada) y estimador de coste: código puro
-├── data/local/      Room (índice y estado de sincronización), MediaStore (lectura), MediaIndexer (reconciliación)
+├── data/local/      Room (índice y estado de sincronización), MediaStore (lectura), MediaIndexer (reconciliación), LibrarySql (consultas de la galería)
 ├── data/remote/     S3RemoteStorage (AWS SDK for Kotlin) + clasificación de errores
 ├── auth/            CredentialsRepository (validación, caducidad, almacenamiento), parser de credenciales temporales
 ├── security/        SecretStore (Android Keystore + AES-GCM), Redactor/SafeLog
 ├── settings/        AppSettings (DataStore, sin secretos)
 ├── sync/            BackupEngine (+ miniaturas), RestoreEngine, RemoteCatalog, RemotePreviewRepository, Deletion (S3 y local), controladores, WorkManager
 └── presentation/    Compose: pantallas, ViewModels, navegación, tema
+    └── library/     motor y componentes compartidos por las dos galerías (ventana paginada, secciones, barra de filtros, hojas)
 ```
 
 ## Flujo de datos
@@ -42,6 +44,8 @@ Principios:
 - **Previsualizar y borrar sin backend:** las miniaturas se generan en el teléfono y se suben con el mismo cliente S3 (ningún servicio nuevo); el borrado en S3 es `DeleteObjects` con permisos IAM opcionales y acotados. Análisis de alternativas (incluidas Lambda/Object Lambda, descartadas) en [cloud-previews.md](cloud-previews.md).
 - **Dos borrados, dos controladores:** `CloudDeletionController` solo habla con S3 y `LocalDeletionController` solo asienta lo que Android ya borró. Ninguno invoca al otro; la UI (`DeleteViewModel`) los ofrece como opciones separadas.
 - **Estimación de costes sin peticiones nuevas:** el listado `ListObjectsV2` que ya hacen el respaldo y la pestaña S3 alimenta también un inventario (por clase de almacenamiento) que `RemoteCatalog` guarda en DataStore; la pantalla solo lo lee y lo valora con `CostEstimator`. Los precios son una tabla local generada con `tools/update_s3_prices.py` desde la API oficial de listas de precios de AWS. Detalle en [cost-estimate.md](cost-estimate.md).
+- **Una galería, dos fuentes:** la galería local (MediaStore → Room) y la de S3 (listado → Room) usan el mismo modelo de consulta (`LibraryQuery`), el mismo motor (`LibraryBrowser`, `PagedWindow`, `LibraryLayout`) y los mismos componentes. Solo difieren los constructores de SQL (`LocalLibrarySql`, `CloudLibrarySql`) y lo que cada una puede afirmar: la de S3 busca y filtra **solo la lista descargada** y lo dice. Detalle en [smart-gallery.md](smart-gallery.md).
+- **Listado en streaming:** `RemoteCatalog` vuelca cada página de `ListObjectsV2` (1000 claves) a Room según llega y solo purga lo que falta tras un listado que llegó al final; el inventario de costes se agrega página a página y se guarda únicamente de un listado completo.
 - **Sin DI framework:** `AppContainer` es un grafo manual. Menos dependencias, arranque más simple.
 
 ## Dependencias (verificadas)
@@ -58,14 +62,14 @@ Principios:
 
 Sin dependencias nuevas para esta función (EXIF y miniaturas usan la plataforma Android).
 
-Descartado tras evaluar: Amazon Cognito, SDK Java v2 (más pesado), firma SigV4 manual, bibliotecas S3-compatibles de terceros, Hilt, Paging, `androidx.security:crypto` (obsoleta; se usa Keystore + AES-GCM directamente de la plataforma).
+Descartado tras evaluar: Amazon Cognito, SDK Java v2 (más pesado), firma SigV4 manual, bibliotecas S3-compatibles de terceros, Hilt, Paging 3, `androidx.security:crypto` (obsoleta; se usa Keystore + AES-GCM directamente de la plataforma).
 
 ## Decisiones relevantes
 
-- **Room v2:** `thumbnailUploaded` y `backupExcluded` (migración 1→2 con valores por defecto seguros, probada con el esquema exportado).
+- **Room v3:** `thumbnailUploaded` y `backupExcluded` (migración 1→2) y, para la galería inteligente, `dayKey`, `dateSource` y los índices por fecha (migración 2→3, con relleno en Kotlin); ambas probadas con el esquema exportado.
 - **`minSdk 29`:** MediaStore con *scoped storage* sin permisos de escritura heredados; las restauraciones se publican en `Pictures/S3Vault` con `IS_PENDING`.
 - **Sin multipart:** `PutObject` con SHA-256 explícito es simple y verificable. Límite de 4 GiB por archivo (el máximo de S3 es 5 GiB). Consecuencia: no hay cargas multipart incompletas que facturar.
 - **MediaStore IDs:** imágenes y vídeos viven en tablas distintas con IDs que pueden solaparse; los vídeos se desplazan `1 shl 40` para tener una clave primaria única.
-- **Galería completa en memoria:** la cuadrícula observa la lista entera desde Room (sin Paging). Aceptable para decenas de miles de filas pequeñas; revisar si se llega a cientos de miles (ver [testing.md](testing.md#validación-manual-pendiente)).
+- **Sin catálogo completo en memoria:** la cuadrícula pide a Room una fila por día (para encabezados, recuentos y saltos) y las fotos por páginas de 96 con una ventana LRU de 20 páginas. No se usa Paging 3: el salto a una fecha y los recuentos por sección necesitan esa aritmética sobre los días. Medido con 20 000 elementos por galería.
 - **Cliente S3 perezoso y por configuración:** se crea en el primer uso (en IO) y se reemplaza al cambiar bucket/región. Las credenciales se resuelven **en cada solicitud** mediante un adaptador, de modo que la caducidad se aplica inmediatamente.
 - **Debug vs release:** el `network_security_config` de `main` solo permite HTTPS. Únicamente `src/debug` permite HTTP a `localhost` para las pruebas con servidor simulado.

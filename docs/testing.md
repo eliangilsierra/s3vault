@@ -4,10 +4,10 @@
 
 | Suite | Comando | Resultado |
 |---|---|---|
-| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **224 pruebas, 0 fallos** |
-| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **46 pruebas, 0 fallos** |
+| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **333 pruebas, 0 fallos** |
+| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **54 pruebas, 0 fallos** |
 | Lint | `./gradlew lintDebug` | 0 errores, 38 avisos (versiones/estilo) |
-| Build release con R8 | `./gradlew assembleRelease` | OK (≈ 4,9 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
+| Build release con R8 | `./gradlew assembleRelease` | OK (≈ 5,7 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
 
 Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pasado sin haberse ejecutado. Lo que **no** se ha podido ejecutar está en [Validación manual pendiente](#validación-manual-pendiente).
 
@@ -40,8 +40,13 @@ Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pas
 | Borrado local | `LocalDeletionTest` (lo que Android borró de verdad se asienta; cancelar no cambia nada; parcial; S3 intacta), e2e con MediaStore real, `PhotoManagementUiTest` con el **diálogo real del sistema** |
 | Estimación de costes | `CostEstimatorTest` (tramos de Standard, GiB y no GB, mínimo de 128 KiB, sobrecarga de Glacier, Intelligent-Tiering, **sin total** con clase sin precio / región sin precios / inventario incompleto, vistas previas como suposición, niveles de confianza, solicitudes), `S3PricingTableTest` (cifras publicadas, las 36 regiones completas y con tramos coherentes), `StorageInventoryTest`, `InventoryCodecTest`, `CostFormatTest`, `CostPersistenceTest` (el listado que ya se hace alimenta el inventario; un fallo no lo guarda; DataStore; eventos de subida y borrado), `S3RemoteStorageTest` (clase de almacenamiento, número de solicitudes, fallo a mitad de listado) |
 | Pantalla de costes | `StorageCostUiTest` (12 flujos sobre la app real: sin inventario, cálculo, bucket vacío, clase sin precio, región sin precios, fallo que conserva lo anterior, cambios pendientes, inventario antiguo, otro bucket, sin S3, sin credenciales, ayuda) |
-| Migración de Room | `MigrationTest` (v1 → v2 desde el esquema exportado, valida Room al abrir) |
-| Flujos de UI | `PhotoManagementUiTest`: selección → «¿qué copia?» → confirmación → progreso → resultado; casilla obligatoria si solo existe en S3; IAM sin permiso explicada y reintento; biblioteca de S3 con miniaturas y visor |
+| Migración de Room | `MigrationTest` (v1 → v2 y v2 → v3 desde el esquema exportado: conserva filas, calcula `dayKey` en la zona del dispositivo, deja las fechas de S3 sin captura en 0; valida Room al abrir) |
+| Fechas y búsqueda | `LibraryDomainTest` (origen de la fecha, rango 1990–hoy+2 días, nombres con fecha, claves de día con horario de verano, analizador de búsqueda en español y chips quitables, filtros y agrupación), `LibraryDatesTest` (escaneo local, listado de S3, fecha de captura que sube de la copia local, zona que cambia, «Completar fechas» una vez por objeto, coste), `LibrarySqlTest` (cada consulta de ambas galerías sobre Room: búsqueda, filtros, orden estable, posiciones, recuentos por día, caracteres `%` y `_` del nombre) |
+| Motor de la galería | `LibraryEngineTest` (disposición de secciones y aritmética de índices, ventana paginada con LRU e invalidación, navegador con consulta que cambia y estabilización) |
+| Listado en streaming | `LibraryDatesTest` y `CostPersistenceTest` (páginas escritas según llegan; un fallo a mitad conserva lo escrito, no purga y marca la lista como incompleta; el inventario sale solo de un listado completo; el respaldo reutiliza un listado de pocos minutos; una subida aparece al instante sin listar) |
+| Rendimiento | `LibraryPerformanceTest` (20 000 elementos por galería en el emulador: página inicial, página profunda, recuentos por día, búsqueda, filtros y otros órdenes, con cotas generosas; el plan de la consulta por defecto usa el índice y no ordena la tabla) |
+| Galería inteligente (UI) | `SmartGalleryUiTest` (secciones por día/mes/año, búsqueda «sg_ marzo 2023», sin resultados, filtro de fecha estimada, orden por nombre, salto a un año en una biblioteca larga, selección de sección; S3: lista descargada, alcance de la búsqueda, **cero peticiones a S3 al buscar/filtrar**, objeto subido desde fuera que solo aparece tras actualizar, vista de lista) |
+| Flujos de UI | `PhotoManagementUiTest` (sobre la cuadrícula nueva de S3): selección → «¿qué copia?» → confirmación → progreso → resultado; casilla obligatoria si solo existe en S3; IAM sin permiso explicada y reintento; biblioteca de S3 con miniaturas y visor |
 
 ### Tipos de prueba
 
@@ -92,7 +97,8 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - Subida/verificación/restauración extremo a extremo contra S3 real (el servidor simulado cubre el protocolo, no las particularidades de AWS: firma sobre HTTPS con `UNSIGNED-PAYLOAD`, `ChecksumMode`, comportamiento del 403/404 en `HEAD`).
 - Credenciales STS reales (`assume-role`, `get-session-token`, `export-credentials` con SSO) y el formato exacto de `Expiration` de tu versión de la CLI.
 - `WorkManager` periódico con pantalla apagada, Doze, ahorro de batería y *standby buckets*; reinicio real del dispositivo.
-- Rendimiento y memoria con bibliotecas grandes (≥ 20 000 fotos): la cuadrícula observa la lista completa desde Room; medir y, si hace falta, paginar. Primer escaneo de MediaStore con muchos archivos.
+- Rendimiento y memoria con bibliotecas de **100 000+** fotos y en un dispositivo real de gama baja (con 20 000 por galería se midió en el emulador, ver `LibraryPerformanceTest`; el tiempo del primer escaneo de MediaStore con muchos archivos no se midió). Un listado de S3 de decenas de miles de objetos contra AWS real tampoco.
+- Fechas de captura reales: en el emulador MediaProvider ignora el `DATE_TAKEN` que escribe una prueba, así que las pruebas de interfaz usan fechas en el nombre del archivo; la lectura de `DATE_TAKEN`/EXIF está cubierta por las pruebas unitarias del resolvedor, no por una foto de cámara real.
 - Hashing y subida de archivos grandes (varios cientos de MB) y de vídeos; límite de 4 GiB sin multipart.
 - Acceso parcial a fotos de Android 14+ (selección limitada) y revocación del permiso durante un respaldo.
 - Fotos HEIC/RAW y vídeos: miniaturas y reproducción en el visor según el dispositivo.

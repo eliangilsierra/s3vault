@@ -48,7 +48,7 @@ El hash se guarda en Room junto con el `(tamaño, fecha de modificación)` de lo
 ## Evitar transferencias innecesarias
 
 1. `BACKED_UP` no se puede volver a encolar.
-2. Al iniciar una tanda se hace un barrido `LIST` de `{prefijo}/photos/` (caché en Room). Si ya existe un objeto con el mismo `versionId` y tamaño (esta instalación tras un fallo, una restauración, otro dispositivo), se enlaza esa clave, se verifica con `HEAD` y se marca respaldado **sin subir**.
+2. Al iniciar una tanda se hace un barrido `LIST` de `{prefijo}/photos/` (caché en Room), salvo que el último listado completo tenga menos de 10 minutos (`refreshIfStale`): la deduplicación solo necesita saber qué hay, y unos minutos de antigüedad no cuestan nada, mientras que un barrido cuesta una petición por cada 1000 objetos. Las subidas terminadas se anotan al instante en la caché (`recordUpload`). Si ya existe un objeto con el mismo `versionId` y tamaño (esta instalación tras un fallo, una restauración, otro dispositivo), se enlaza esa clave, se verifica con `HEAD` y se marca respaldado **sin subir**.
 3. Antes de subir se comprueba si la clave exacta ya existe (`HEAD`), útil tras una subida interrumpida que sí terminó.
 4. Si S3 contesta 403 (política con `ListBucket` por prefijo) al `HEAD` de un objeto inexistente, se cae a la subida normal.
 
@@ -126,3 +126,8 @@ Reglas completas y costes: [cloud-previews.md](cloud-previews.md).
 ## Catálogo remoto sin manifiesto
 
 Se descartó un manifiesto JSON en S3: exigiría resolver escrituras concurrentes desde varios dispositivos, escrituras interrumpidas y recuperación (S3 no tiene *compare-and-swap* simple sin ETags condicionales y bloqueos). Como la clave ya lleva `assetId`/`versionId`/nombre, un `ListObjectsV2` basta. Coste: un `LIST` por 1000 objetos al refrescar; los metadatos extendidos (fecha de captura, nombre exacto) se piden con `HEAD` solo cuando abres el detalle de un objeto. Las miniaturas de esta versión se generan en el teléfono al respaldar (ver arriba) precisamente para no tener que descargar el original.
+
+## Listado, caché y fechas de la biblioteca remota
+
+- `RemoteCatalog.refresh` lee `ListObjectsV2` página a página y **escribe cada página en Room al recibirla**: los primeros objetos aparecen mientras llega el resto y nunca se retiene más que una página. Si el listado falla o se cancela, las páginas ya escritas se conservan, **no se purga nada** y se guarda `ListingResult(complete = false)` para que la interfaz avise de que la lista puede ser incompleta; solo un listado que llega al final retira de la caché los objetos que ya no existen (la caché; S3 nunca se toca).
+- Cada fila guarda además `effectiveDateMs`, `dateSource`, `dayKey` (0 si no hay fecha de captura) y `uploadDayKey`. Una fecha de captura ya conocida nunca se degrada por un listado posterior. Qué es una fecha de captura y cómo se obtiene sin peticiones adicionales: [smart-gallery.md](smart-gallery.md#fechas-qué-es-una-fecha-de-captura).
