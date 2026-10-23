@@ -35,7 +35,11 @@ Estructura de claves que crea la app:
 ```
 {prefijo}/photos/{assetId}/{versionId}/{nombre}      fotos respaldadas
 {prefijo}/.s3vault/connection-check.txt              objeto de prueba (~30 bytes)
+{prefijo}/.s3vault/thumbs/{versionId}.jpg            miniatura (~60 KB) para ver la foto sin descargarla
+{prefijo}/.s3vault/albums.json                       álbumes publicados por tools/s3vault_import.py (solo lectura)
 ```
+
+Las miniaturas viven **fuera de `photos/`** a propósito: si usas una regla de ciclo de vida sobre `photos/` (p. ej. `GLACIER_IR`), las miniaturas se quedan en S3 Standard, sin cargo de recuperación. Detalles y costes en [cloud-previews.md](cloud-previews.md).
 
 ## 4. Crear una identidad IAM dedicada
 
@@ -50,7 +54,7 @@ aws iam put-user-policy --user-name s3vault-user --policy-name s3vault-minimal -
 
 ## 5. Limitar permisos a bucket y prefijo
 
-Es exactamente lo que hace la política anterior: `ListBucket` sobre el bucket con condición `s3:prefix`; `PutObject`/`GetObject` sobre `BUCKET_NAME/PREFIX/*`; `Deny` de borrado. Explicación completa en [iam-policy.md](iam-policy.md).
+Es exactamente lo que hace la política anterior: `ListBucket` sobre el bucket con condición `s3:prefix`; `PutObject`/`GetObject` sobre `BUCKET_NAME/PREFIX/*`; `Deny` de borrado (el borrado desde la app es opcional: ver [Permitir borrar desde la app](iam-policy.md#permitir-borrar-desde-la-app-opcional)). Explicación completa en [iam-policy.md](iam-policy.md).
 
 ## 6. Introducir credenciales estáticas (método B, avanzado)
 
@@ -107,6 +111,7 @@ La app no consulta S3 periódicamente «por si acaso»: solo hay tráfico cuando
 | Error temporal de red | Sin conexión, DNS, timeout | Se reintenta con backoff exponencial. |
 | AWS limitó las solicitudes (`SlowDown`) | Demasiadas solicitudes | Se reintenta más tarde; baja las «subidas simultáneas». |
 | Límite o cuota de AWS | Cuota de cuenta | Revisa Service Quotas / facturación. |
+| «Tu política IAM no permite borrar objetos» al usar *Eliminar de S3* | La política recomendada lleva un `Deny` de borrado (a propósito) | Si quieres borrar desde la app, aplica [Permitir borrar desde la app](iam-policy.md#permitir-borrar-desde-la-app-opcional); si no, no hagas nada: no se ha perdido nada. |
 
 Los mensajes nunca incluyen secretos: solo la causa, el código HTTP y el código de error de S3.
 
@@ -131,12 +136,15 @@ La app no crea infraestructura ni costes por sí misma, pero **tu cuenta paga** 
 
 | Concepto | Quién lo genera |
 |---|---|
-| Almacenamiento (GB-mes) | Cada foto respaldada. Las versiones nuevas de fotos modificadas **se suman** (la antigua se conserva; no hay borrado). |
-| `PUT` | Una por foto subida (más una por «Probar permisos»). |
-| `GET` | Restauraciones. |
+| Almacenamiento (GB-mes) | Cada foto respaldada y su miniatura (~60 KB). Las versiones nuevas de fotos modificadas **se suman** (la antigua se conserva hasta que la borres tú). |
+| `PUT` | Una por foto subida, una por su miniatura (opcional, desactivable en Ajustes generales) y una por «Probar permisos». |
+| `GET` | Restauraciones y vistas previas (una de ~60 KB por foto vista; una con `Range` de 128 KiB si no hay miniatura). |
+| `DELETE` | Gratuitas. Solo se envían si activas el borrado y lo confirmas. |
 | `LIST`/`HEAD` | Un barrido de `LIST` al iniciar una tanda de respaldo y al refrescar la biblioteca (1000 objetos por solicitud); un `HEAD` por verificación. Con muchos objetos, refrescar a menudo suma. |
 | Transferencia de salida | Descargas/restauraciones fuera de AWS (la entrada a S3 no se factura). |
 | Versioning | Solo si **tú** lo activas; entonces cada sobrescritura/versión se factura. |
 | Multipart incompleto | No aplica: esta versión no usa multipart. Aun así puedes añadir una regla de ciclo de vida que aborte cargas incompletas tras 7 días. |
+
+Estimación de las vistas previas (≈ 0,02 $/mes para 10 000 fotos): [cloud-previews.md](cloud-previews.md#estimación-de-costes-recurrentes).
 
 Evita costes innecesarios: la app no vuelve a subir lo ya respaldado (índice local + hash + deduplicación por contenido), no sondea la conexión sin trabajo pendiente y permite «solo Wi-Fi» y excluir vídeos. Considera clases de almacenamiento o reglas de ciclo de vida de S3 si el volumen crece. **No hay garantía de gratuidad** (la capa gratuita de AWS es limitada y temporal).

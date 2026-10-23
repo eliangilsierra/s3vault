@@ -10,7 +10,7 @@ com.s3vault.app
 ├── auth/            CredentialsRepository (validación, caducidad, almacenamiento), parser de credenciales temporales
 ├── security/        SecretStore (Android Keystore + AES-GCM), Redactor/SafeLog
 ├── settings/        AppSettings (DataStore, sin secretos)
-├── sync/            BackupEngine, RestoreEngine, RemoteCatalog, controladores, WorkManager
+├── sync/            BackupEngine (+ miniaturas), RestoreEngine, RemoteCatalog, RemotePreviewRepository, Deletion (S3 y local), controladores, WorkManager
 └── presentation/    Compose: pantallas, ViewModels, navegación, tema
 ```
 
@@ -38,6 +38,8 @@ Principios:
 - **S3 es solo almacenamiento de archivos.** No hay manifiesto remoto: el catálogo se deriva de `ListObjectsV2` porque la clave ya contiene `assetId`, `versionId` y nombre.
 - **La UI nunca habla con S3 ni con credenciales**: usa `RemoteStorage`/`AwsCredentialsProvider` a través de controladores. La lógica de galería no sabe si la credencial es temporal o estática.
 - **Hilos:** MediaStore, hashing y disco en `Dispatchers.IO`; todo el trabajo S3 se fija a IO dentro de `S3RemoteStorage` (incluido el cierre del cliente), porque los ViewModels llaman desde `Main`. Hubo un bug real de `NetworkOnMainThreadException` en la build release que lo demostró; hay una prueba instrumentada que lo protege.
+- **Previsualizar y borrar sin backend:** las miniaturas se generan en el teléfono y se suben con el mismo cliente S3 (ningún servicio nuevo); el borrado en S3 es `DeleteObjects` con permisos IAM opcionales y acotados. Análisis de alternativas (incluidas Lambda/Object Lambda, descartadas) en [cloud-previews.md](cloud-previews.md).
+- **Dos borrados, dos controladores:** `CloudDeletionController` solo habla con S3 y `LocalDeletionController` solo asienta lo que Android ya borró. Ninguno invoca al otro; la UI (`DeleteViewModel`) los ofrece como opciones separadas.
 - **Sin DI framework:** `AppContainer` es un grafo manual. Menos dependencias, arranque más simple.
 
 ## Dependencias (verificadas)
@@ -48,14 +50,17 @@ Principios:
 | Kotlin / AGP / Gradle | 2.3.21 / 8.13.2 / 8.13 | Estables y compatibles entre sí. |
 | Compose BOM / Material 3 | 2026.04.01 | La BOM más reciente (2026.09) exige `compileSdk 37` y AGP 9.1+. Se fijó una versión que compila con la plataforma 36 instalada. |
 | Room / WorkManager / DataStore | 2.8.5 / 2.11.2 / 1.2.1 | Índice local, trabajo persistente con restricciones, preferencias no secretas. |
-| Coil 3 (+ coil-video) | 3.4.0 | Miniaturas bajo demanda decodificadas al tamaño de la celda; fotogramas de vídeo. |
+| Coil 3 (+ coil-video) | 3.4.0 | Miniaturas bajo demanda decodificadas al tamaño de la celda; fotogramas de vídeo; también muestra las miniaturas de S3 ya cacheadas en disco. |
 | OkHttp (transitiva del SDK) | forzado a 5.3.2 | 5.4+ exige `compileSdk 37`. El SDK funciona con 5.3.x. |
 | Tests | JUnit 4, MockK, MockWebServer 5.3.2, Robolectric 4.16.1, Espresso 3.7.0 | Espresso 3.7.0 es necesario en Android 17 (el anterior usa una API oculta eliminada). |
+
+Sin dependencias nuevas para esta función (EXIF y miniaturas usan la plataforma Android).
 
 Descartado tras evaluar: Amazon Cognito, SDK Java v2 (más pesado), firma SigV4 manual, bibliotecas S3-compatibles de terceros, Hilt, Paging, `androidx.security:crypto` (obsoleta; se usa Keystore + AES-GCM directamente de la plataforma).
 
 ## Decisiones relevantes
 
+- **Room v2:** `thumbnailUploaded` y `backupExcluded` (migración 1→2 con valores por defecto seguros, probada con el esquema exportado).
 - **`minSdk 29`:** MediaStore con *scoped storage* sin permisos de escritura heredados; las restauraciones se publican en `Pictures/S3Vault` con `IS_PENDING`.
 - **Sin multipart:** `PutObject` con SHA-256 explícito es simple y verificable. Límite de 4 GiB por archivo (el máximo de S3 es 5 GiB). Consecuencia: no hay cargas multipart incompletas que facturar.
 - **MediaStore IDs:** imágenes y vídeos viven en tablas distintas con IDs que pueden solaparse; los vídeos se desplazan `1 shl 40` para tener una clave primaria única.
