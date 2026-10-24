@@ -37,7 +37,20 @@ android {
         }
     }
 
+    // Release code (optimised, not debuggable, no tooling) signed with the debug key so it can be installed and instrumented
+    // next to a debug build: `-PperfBuildType=benchmark` runs the on-device performance tests against it instead of the debug
+    // build, to tell app cost from debug-build overhead (see docs/performance.md).
+    testBuildType = (findProperty("perfBuildType") as String?) ?: "debug"
+
     buildTypes {
+        create("benchmark") {
+            initWith(getByName("release"))
+            isMinifyEnabled = false
+            isShrinkResources = false
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true

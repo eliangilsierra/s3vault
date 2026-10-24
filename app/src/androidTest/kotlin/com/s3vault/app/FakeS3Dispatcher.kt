@@ -31,6 +31,12 @@ class FakeS3Dispatcher(private val bucket: String, private val allowedPrefix: St
     /** False mimics the recommended read/write-only IAM policy: every DeleteObjects entry answers AccessDenied. */
     @Volatile var allowDelete = true
 
+    /** Keys DeleteObjects answers with the given S3 error code (for example "SlowDown" or "InternalError"), the rest succeed. */
+    val failingKeys = ConcurrentHashMap<String, String>()
+
+    /** How long a DeleteObjects answer is held back, to observe the app while a bulk deletion is in flight. */
+    @Volatile var deleteDelayMs = 0L
+
     /** Keys that were requested with GET (full or ranged), in order. */
     val getKeys = java.util.Collections.synchronizedList(mutableListOf<String>())
     val rangeHeaders = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -119,11 +125,17 @@ class FakeS3Dispatcher(private val bucket: String, private val allowedPrefix: St
         keys.forEach { k ->
             if (!allowDelete || !k.startsWith(allowedPrefix)) {
                 errors.append("<Error><Key>${k.xmlEscape()}</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>")
+            } else if (failingKeys.containsKey(k)) {
+                val code = failingKeys.getValue(k)
+                errors.append("<Error><Key>${k.xmlEscape()}</Key><Code>$code</Code><Message>$code</Message></Error>")
             } else {
                 objects.remove(k)
             }
         }
-        return xml(200, "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">$errors</DeleteResult>")
+        val body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">$errors</DeleteResult>"
+        if (deleteDelayMs <= 0) return xml(200, body)
+        return MockResponse.Builder().code(200).addHeader("Content-Type", "application/xml").body(body)
+            .headersDelay(deleteDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS).build()
     }
 
     private fun String.xmlEscape() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
