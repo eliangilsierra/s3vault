@@ -112,7 +112,7 @@ class CloudDeletionTest {
         val thumbKey = env.keys.thumbnailKey(version)
         env.remote.objects[thumbKey] = FakeRemote.Obj("p".toByteArray(), "", "e")
         val evicted = mutableListOf<String>()
-        val controller = env.cloudDeletion { evicted += it }
+        val controller = env.cloudDeletion(onVersionsDeleted = { evicted += it })
 
         controller.delete(listOf(k1))
         assertTrue("still used by the second object", env.remote.objects.containsKey(thumbKey))
@@ -146,7 +146,7 @@ class CloudDeletionTest {
         val keys = (1..101).map { foreignObject(it) }
         env.remote.deleteRequestFailures += RemoteException(RemoteErrorKind.ACCESS_DENIED)
 
-        val r = env.cloudDeletion().delete(keys)
+        val r = env.cloudDeletion(batchSize = 100).delete(keys)
 
         assertTrue(r.deleted.isEmpty())
         assertEquals(101, r.failed.size)
@@ -160,7 +160,7 @@ class CloudDeletionTest {
         val keys = (1..101).map { foreignObject(it) }
         keys.take(100).forEach { env.remote.deleteKeyFailures[it] = RemoteErrorKind.ACCESS_DENIED }
 
-        val r = env.cloudDeletion().delete(keys)
+        val r = env.cloudDeletion(batchSize = 100).delete(keys)
 
         assertEquals(1, env.remote.deleteCalls.size)
         assertEquals(101, r.failed.size)
@@ -193,11 +193,13 @@ class CloudDeletionTest {
 
     @Test fun `a failed whole request does not touch the index`() = runBlocking {
         val key = backedUp(1)
-        env.remote.deleteRequestFailures += RemoteException(RemoteErrorKind.NETWORK)
+        // The network stays down for the first try and both retries.
+        repeat(3) { env.remote.deleteRequestFailures += RemoteException(RemoteErrorKind.NETWORK) }
 
         val r = env.cloudDeletion().delete(listOf(key))
 
         assertEquals(mapOf(key to RemoteErrorKind.NETWORK), r.failed)
+        assertEquals(3, env.remote.deleteCalls.size)
         assertEquals(SyncState.BACKED_UP, env.db.media().get(1)!!.syncState)
         assertEquals(key, env.db.media().get(1)!!.remoteKey)
         assertNotNull(env.db.remote().get(key))
@@ -211,7 +213,7 @@ class CloudDeletionTest {
 
     @Test fun `cancelling between batches keeps the finished batches consistent`() = runBlocking {
         val keys = (1..150).map { foreignObject(it) }
-        val controller = env.cloudDeletion()
+        val controller = env.cloudDeletion(batchSize = 100)
         lateinit var job: kotlinx.coroutines.Job
         job = launch(start = CoroutineStart.LAZY) {
             controller.delete(keys) { done, _ -> if (done >= 100) job.cancel() }
@@ -228,8 +230,103 @@ class CloudDeletionTest {
     @Test fun `progress is reported per batch`() = runBlocking {
         val keys = (1..120).map { foreignObject(it) }
         val seen = mutableListOf<Pair<Int, Int>>()
-        env.cloudDeletion().delete(keys) { d, t -> seen += d to t }
+        env.cloudDeletion(batchSize = 100).delete(keys) { d, t -> seen += d to t }
         assertEquals(listOf(0 to 120, 100 to 120, 120 to 120), seen)
+    }
+
+    @Test fun `a bulk deletion uses the largest batch S3 accepts, not a request per hundred`() = runBlocking {
+        val keys = (1..2_300).map { foreignObject(it) }
+
+        val r = env.cloudDeletion().delete(keys)
+
+        assertEquals(2_300, r.deleted.size)
+        assertTrue(r.failed.isEmpty())
+        val photoRequests = env.remote.deleteCalls.filter { call -> call.all { env.keys.isPhotoKey(it) } }
+        assertEquals(listOf(1_000, 1_000, 300), photoRequests.map { it.size })
+        assertTrue("never above the S3 limit", env.remote.deleteCalls.all { it.size <= 1_000 })
+        assertEquals(0, env.db.remote().getAll().size)
+    }
+
+    @Test fun `a key S3 throttled is asked again and reported as deleted once it works`() = runBlocking {
+        val k1 = foreignObject(1)
+        val k2 = foreignObject(2)
+        env.remote.deleteKeyFailures[k2] = RemoteErrorKind.THROTTLED
+        val pauses = mutableListOf<Int>()
+        // S3 recovers after the first answer: the retry must go through.
+        env.remote.onDelete = { if (env.remote.deleteCalls.count { c -> c.all { env.keys.isPhotoKey(it) } } >= 2) env.remote.deleteKeyFailures.clear() }
+
+        val r = env.cloudDeletion(pauses = pauses).delete(listOf(k1, k2))
+
+        assertEquals(setOf(k1, k2), r.deleted.toSet())
+        assertTrue(r.failed.isEmpty())
+        assertEquals(listOf(listOf(k1, k2), listOf(k2)), env.remote.deleteCalls.filter { c -> c.all { env.keys.isPhotoKey(it) } })
+        assertEquals("one pause before the retry", listOf(0), pauses)
+    }
+
+    @Test fun `throttling that does not go away is reported as failed after a few tries, never as deleted`() = runBlocking {
+        val k1 = foreignObject(1)
+        env.remote.deleteKeyFailures[k1] = RemoteErrorKind.THROTTLED
+        val pauses = mutableListOf<Int>()
+
+        val r = env.cloudDeletion(pauses = pauses).delete(listOf(k1))
+
+        assertTrue(r.deleted.isEmpty())
+        assertEquals(mapOf(k1 to RemoteErrorKind.THROTTLED), r.failed)
+        assertEquals("first try plus two retries", 3, env.remote.deleteCalls.size)
+        assertTrue("and no preview request for a photo that is still there", env.remote.deleteCalls.all { c -> c.all { env.keys.isPhotoKey(it) } })
+        assertEquals(listOf(0, 1), pauses)
+        assertNotNull("still listed: nothing was deleted", env.db.remote().get(k1))
+        assertTrue(env.remote.objects.containsKey(k1))
+    }
+
+    @Test fun `a request that fails because the network dropped is retried before giving up`() = runBlocking {
+        val k1 = foreignObject(1)
+        env.remote.deleteRequestFailures += RemoteException(RemoteErrorKind.NETWORK)
+
+        val r = env.cloudDeletion().delete(listOf(k1))
+
+        assertEquals(listOf(k1), r.deleted)
+        assertTrue(r.failed.isEmpty())
+        assertEquals("the failed request, then the one that worked", 2, env.remote.deleteCalls.count { c -> c.all { env.keys.isPhotoKey(it) } })
+    }
+
+    @Test fun `permission errors are never retried`() = runBlocking {
+        val k1 = foreignObject(1)
+        env.remote.deleteKeyFailures[k1] = RemoteErrorKind.ACCESS_DENIED
+        val pauses = mutableListOf<Int>()
+
+        val r = env.cloudDeletion(pauses = pauses).delete(listOf(k1))
+
+        assertEquals(mapOf(k1 to RemoteErrorKind.ACCESS_DENIED), r.failed)
+        assertEquals(1, env.remote.deleteCalls.size)
+        assertTrue(pauses.isEmpty())
+    }
+
+    @Test fun `cancelling right after S3 answered still records what S3 deleted`() = runBlocking {
+        val keys = (1..5).map { foreignObject(it) }
+        lateinit var job: kotlinx.coroutines.Job
+        env.remote.onDelete = { job.cancel() } // the user taps Cancel while the request is in flight
+        job = launch(start = CoroutineStart.LAZY) { env.cloudDeletion().delete(keys) }
+        job.start()
+        job.join()
+
+        assertTrue(job.isCancelled)
+        // S3 deleted them; the cache must say so even though the run was cancelled.
+        assertEquals(emptyList<String>(), env.db.remote().getAll().map { it.key }.filter { it in env.remote.deletedKeys })
+    }
+
+    @Test fun `two deletions never run at the same time`() = runBlocking {
+        val k1 = foreignObject(1)
+        val k2 = foreignObject(2)
+        val controller = env.cloudDeletion()
+        var inFlight = 0
+        var maxInFlight = 0
+        env.remote.onDelete = { inFlight++; maxInFlight = maxOf(maxInFlight, inFlight); kotlinx.coroutines.delay(20); inFlight-- }
+        val a = launch { controller.delete(listOf(k1)) }
+        val b = launch { controller.delete(listOf(k2)) }
+        a.join(); b.join()
+        assertEquals(1, maxInFlight)
+        assertEquals(emptySet<String>(), env.db.remote().getAll().map { it.key }.toSet())
     }
 }
 
@@ -242,7 +339,16 @@ class LocalDeletionTest {
     @Before fun setUp() { env = TestEnv() }
     @After fun tearDown() { env.close() }
 
-    private fun controller() = LocalDeletionController(env.db) { uri -> uri in existing }
+    private var existenceChecks = 0
+    private var batchChecks = 0
+
+    private fun controller() = LocalDeletionController(
+        env.db,
+        object : LocalMediaGateway {
+            override suspend fun exists(uri: String): Boolean { existenceChecks++; return uri in existing }
+            override suspend fun existing(uris: List<String>): Set<String> { batchChecks++; return uris.filterTo(HashSet()) { it in existing } }
+        },
+    )
 
     private suspend fun entry(id: Long): DeleteEntry {
         val row = env.db.media().get(id)!!
@@ -299,6 +405,17 @@ class LocalDeletionTest {
         assertEquals(LocalDeleteResult(deleted = 1, keptInCloud = 0, lost = 1, remaining = 1), r)
         assertEquals(SyncState.BACKED_UP, env.db.media().get(1)!!.syncState)
         assertNull(env.db.media().get(2))
+    }
+
+    @Test fun `the files are checked in one batch, not one at a time`() = runBlocking {
+        setUpTwoPhotos()
+        val entries = listOf(entry(1), entry(2), entry(3))
+        existing -= entries.map { it.uri!! }.toSet()
+
+        controller().settle(entries)
+
+        assertEquals(1, batchChecks)
+        assertEquals(0, existenceChecks)
     }
 
     @Test fun `entries without a local file are ignored`() = runBlocking {

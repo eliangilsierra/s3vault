@@ -149,7 +149,7 @@ class CostPersistenceTest {
     @Test fun `a cancelled deletion still counts the batches that went through`() = runBlocking {
         val keys = (1..150).map { put("p$it.jpg", 10) }
         catalog().refresh(ctx())
-        val controller = env.cloudDeletion()
+        val controller = env.cloudDeletion(batchSize = 100)
         lateinit var job: kotlinx.coroutines.Job
         job = launch(start = CoroutineStart.LAZY) { controller.delete(keys) { done, _ -> if (done >= 100) job.cancel() } }
         job.start()

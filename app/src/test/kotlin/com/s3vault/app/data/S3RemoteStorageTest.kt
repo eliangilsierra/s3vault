@@ -315,7 +315,7 @@ class S3RemoteStorageTest {
         ).forEach { bad ->
             assertThrows(bad, IllegalArgumentException::class.java) { runBlocking { s.delete(listOf(keys.photoKey(assetId, version, "ok.jpg"), bad)) } }
         }
-        val tooMany = (0 until 101).map { keys.photoKey("%032x".format(it), version, "x.jpg") }
+        val tooMany = (0..com.s3vault.app.domain.RemoteStorage.MAX_DELETE_BATCH).map { keys.photoKey("%032x".format(it), version, "x.jpg") }
         assertThrows(IllegalArgumentException::class.java) { runBlocking { s.delete(tooMany) } }
         assertEquals(0, server.requestCount)
     }

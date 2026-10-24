@@ -68,6 +68,9 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
     val deleteKeyFailures = mutableMapOf<String, RemoteErrorKind>()
     val deleteRequestFailures = ArrayDeque<RemoteException>()
 
+    /** Runs inside every delete request, after it was recorded (a test can cancel, slow down or change what S3 will answer). */
+    var onDelete: suspend () -> Unit = {}
+
     /** Mimics S3 with a prefix-scoped ListBucket policy: a missing key answers 403 instead of 404. */
     var missingKeysAnswerForbidden = false
     val readFailures = ArrayDeque<RemoteException>()
@@ -155,6 +158,7 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
         require(keys.size <= com.s3vault.app.domain.RemoteStorage.MAX_DELETE_BATCH)
         keys.forEach { require(this.keys.isWithinPrefix(it)) }
         deleteCalls += keys
+        onDelete()
         deleteRequestFailures.removeFirstOrNull()?.let { throw it }
         val failed = keys.filter { it in deleteKeyFailures }.associateWith { deleteKeyFailures.getValue(it) }
         val ok = keys.filter { it !in failed }
@@ -237,7 +241,12 @@ class TestEnv(val prefix: String = "mi/prefijo/") {
         thumbnails = thumbnails, previewsEnabled = previewsEnabled,
     )
 
-    fun cloudDeletion(onVersionsDeleted: (Collection<String>) -> Unit = {}) = CloudDeletionController(db, provider, onVersionsDeleted, events)
+    /** [batchSize] is small in tests that need several batches; retries do not wait (the pause is what is replaced). */
+    fun cloudDeletion(
+        onVersionsDeleted: (Collection<String>) -> Unit = {},
+        batchSize: Int = com.s3vault.app.domain.RemoteStorage.MAX_DELETE_BATCH,
+        pauses: MutableList<Int>? = null,
+    ) = CloudDeletionController(db, provider, onVersionsDeleted, events, batchSize) { attempt -> pauses?.add(attempt) }
 
     fun restoreEngine(sink: RestoreSink, partDir: File) =
         RestoreEngine(db, provider, creds, sink, partDir, progress, events)

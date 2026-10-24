@@ -23,6 +23,50 @@ class MediaStoreGateway(private val context: Context) : LocalMediaGateway {
             false
         }
     }
+
+    /**
+     * One query per collection and chunk (`_id IN (...)`) instead of one IPC per file: 300 photos cost two or three round
+     * trips to MediaProvider, not 300. Anything that cannot be asked about is reported as still there, so a file is never
+     * forgotten by mistake.
+     */
+    override suspend fun existing(uris: List<String>): Set<String> = withContext(Dispatchers.IO) {
+        val found = HashSet<String>()
+        // content://media/external/images/media/42 -> collection content://media/external/images/media, id 42
+        val parsed = uris.map { it to runCatching { Uri.parse(it) }.getOrNull() }
+        val byCollection = LinkedHashMap<Uri, MutableList<Pair<String, Long>>>()
+        for ((raw, uri) in parsed) {
+            val id = uri?.lastPathSegment?.toLongOrNull()
+            val parent = uri?.let { u -> u.buildUpon().path(u.pathSegments.dropLast(1).joinToString("/", prefix = "/")).build() }
+            if (id == null || parent == null) { found += raw; continue } // cannot tell: keep it
+            byCollection.getOrPut(parent) { ArrayList() } += raw to id
+        }
+        for ((collection, members) in byCollection) {
+            for (chunk in members.chunked(QUERY_CHUNK)) {
+                try {
+                    val alive = HashSet<Long>()
+                    context.contentResolver.query(
+                        collection, arrayOf(MediaStore.MediaColumns._ID),
+                        "${MediaStore.MediaColumns._ID} IN (${chunk.joinToString(",") { "?" }})", chunk.map { it.second.toString() }.toTypedArray(), null,
+                    )?.use { c ->
+                        val i = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                        while (c.moveToNext()) alive += c.getLong(i)
+                    } ?: run { chunk.forEach { found += it.first }; continue }
+                    chunk.forEach { (raw, id) -> if (id in alive) found += raw }
+                } catch (e: SecurityException) {
+                    chunk.forEach { found += it.first }
+                } catch (e: IllegalArgumentException) {
+                    // the collection rejected the query: fall back to the per-file check for this chunk
+                    chunk.forEach { if (exists(it.first)) found += it.first }
+                }
+            }
+        }
+        found
+    }
+
+    private companion object {
+        /** Bound variables per query; below SQLite's 999 on Android 10/11. */
+        const val QUERY_CHUNK = 400
+    }
 }
 
 /**

@@ -118,7 +118,8 @@ interface RemoteStorage {
     suspend fun delete(keys: List<String>): DeleteReport
 
     companion object {
-        const val MAX_DELETE_BATCH = 100
+        /** DeleteObjects takes up to 1000 keys per request: fewer, larger requests instead of dozens of sequential round trips. */
+        const val MAX_DELETE_BATCH = 1000
     }
 }
 
