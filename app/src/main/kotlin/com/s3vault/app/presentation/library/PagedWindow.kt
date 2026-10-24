@@ -69,11 +69,20 @@ class PagedWindow<T : Any>(
         }
     }
 
-    /** The result set changed (rows added, removed or updated): re-read what is loaded, keep showing it meanwhile. */
+    /**
+     * The result set changed (rows added, removed or updated): re-read the pages around what is on screen and keep showing
+     * them meanwhile. Pages further away are dropped instead of re-read (they load again if the user ever scrolls there):
+     * a backup flipping badges many times a second used to re-read up to [maxPages] pages each time.
+     */
     fun invalidate() {
         generation++
+        // A page that was still being read when the data changed holds a stale answer that will be discarded: it must be asked
+        // for again here, because nothing else will (the grid only asks when its visible range or layout changes).
+        val wanted = HashSet<Int>(pages.keys).also { it += loading }
         loading.clear()
-        for (p in pages.keys.toList()) load(p, generation)
+        for (p in wanted) {
+            if (abs(p - center) <= REFRESH_RADIUS) load(p, generation) else pages.remove(p)
+        }
     }
 
     /** A different query: nothing loaded is valid any more. */
@@ -101,6 +110,11 @@ class PagedWindow<T : Any>(
                 if (gen == generation) loading -= page
             }
         }
+    }
+
+    private companion object {
+        /** Pages on each side of the visible ones that are re-read in place when the data changes. */
+        const val REFRESH_RADIUS = 2
     }
 
     private fun evict() {

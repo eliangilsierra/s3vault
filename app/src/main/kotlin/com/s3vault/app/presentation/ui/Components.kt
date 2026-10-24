@@ -78,11 +78,18 @@ import com.s3vault.app.presentation.theme.status
  * Material widgets, so spacing, shape, type and tone stay consistent.
  */
 
+/**
+ * The reduced-motion flag read once at the top of the app. Every grid cell asks for it, and a cell is composed again each time
+ * it scrolls into view: reading the system setting per cell put a settings lookup on the scroll path.
+ */
+val LocalReducedMotion = androidx.compose.runtime.compositionLocalOf<Boolean?> { null }
+
 /** True when the user turned system animations off; decorative motion must then be skipped. */
 @Composable
 fun rememberReducedMotion(): Boolean {
+    val provided = LocalReducedMotion.current
     val ctx = LocalContext.current
-    return remember {
+    return provided ?: remember {
         runCatching { Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
     }
 }

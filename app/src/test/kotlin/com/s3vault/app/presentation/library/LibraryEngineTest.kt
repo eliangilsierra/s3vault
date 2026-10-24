@@ -7,6 +7,7 @@ import com.s3vault.app.domain.library.LibraryScope
 import com.s3vault.app.domain.library.Section
 import com.s3vault.app.domain.library.SortField
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -22,6 +23,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -231,6 +233,35 @@ class PagedWindowTest {
         assertEquals("x0", w[0])
     }
 
+    @Test fun `invalidate re-reads the pages around the viewport and drops the far ones`() = runTest(StandardTestDispatcher()) {
+        val loads = mutableListOf<Int>()
+        val w = PagedWindow<String>(this, 10, 20) { offset, limit -> loads += offset / 10; (offset until offset + limit).map { "i$it" } }
+        w.reset(1000)
+        for (start in listOf(0, 100, 200, 300, 400)) { w.ensure(start..start + 9); advanceUntilIdle() }
+        assertTrue("several pages are loaded", w.loadedPages >= 10)
+        loads.clear()
+
+        w.invalidate()
+        advanceUntilIdle()
+
+        assertTrue("only pages near the last viewport (40..) were re-read: $loads", loads.all { it in 38..42 })
+        assertNull("a far page is not kept stale", w[0])
+        assertEquals("the viewport is still there", "i400", w[400])
+    }
+
+    @Test fun `a page that was still loading when the data changed is asked for again`() = runTest(StandardTestDispatcher()) {
+        var version = 1
+        val w = PagedWindow<String>(this, 10, 3) { offset, limit -> delay(10); (offset until offset + limit).map { "v$version-$it" } }
+        w.reset(30)
+        w.ensure(0..9); runCurrent() // the read of page 0 has started and is waiting
+        version = 2
+        w.invalidate() // the answer in flight is now stale and will be dropped
+
+        advanceUntilIdle()
+
+        assertEquals("the page is not lost: it was re-read after the change", "v2-3", w[3])
+    }
+
     @Test fun `list source is a window over a plain list`() {
         val s = ListSource(listOf("a", "b"))
         assertEquals(2, s.size); assertEquals("b", s[1]); assertNull(s[2]); s.ensure(0..1)
@@ -256,7 +287,7 @@ class LibraryBrowserTest {
         scope = this, library = LibraryScope.LOCAL, queries = query,
         observeCount = { f.counts }, observeDays = { f.days },
         loadPage = { q, off, lim -> f.pageLoads += Triple(q, off, lim); (off until off + lim).map { "${q.search}#$it" } },
-        pageSize = 10, settleMs = settle,
+        pageSize = 10, settleMs = settle, computeContext = kotlin.coroutines.EmptyCoroutineContext,
     )
 
     @Test fun `grouped queries observe one row per day and expose the layout`() = browserTest {
@@ -315,6 +346,20 @@ class LibraryBrowserTest {
         advanceUntilIdle()
         assertTrue("loaded pages were re-read", f.pageLoads.size > loadsBefore)
         assertEquals("#0", b.window[0])
+    }
+
+    @Test fun `a change that moves no photo keeps the layout and still refreshes the cells`() = browserTest {
+        val f = Fake(); val b = browser(f, settle = 100)
+        f.days.emit(listOf(DayCount(20240402, 30))); advanceUntilIdle()
+        b.window.ensure(0..9); advanceUntilIdle()
+        val layout = b.state.value.layout
+        val loadsBefore = f.pageLoads.size
+
+        f.days.emit(listOf(DayCount(20240402, 30))) // a badge changed: same days, same counts
+        advanceUntilIdle()
+
+        assertSame("the grid is not rebuilt for a badge", layout, b.state.value.layout)
+        assertTrue("but the visible cells are re-read", f.pageLoads.size > loadsBefore)
     }
 
     @Test fun `a burst of changes is applied once, with the latest data`() = browserTest {

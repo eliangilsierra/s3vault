@@ -23,6 +23,9 @@ import com.s3vault.app.security.Redactor
 import com.s3vault.app.settings.GridDensity
 import com.s3vault.app.sync.MediaAccess
 import com.s3vault.app.sync.Progress
+import com.s3vault.app.presentation.delete.toDeleteEntry
+import com.s3vault.app.sync.DeleteEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,15 +39,17 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class GalleryUiState(
     val access: MediaAccess,
     val selected: Set<Long> = emptySet(),
     val refreshing: Boolean = false,
     val error: String? = null,
-    val albums: List<Album> = emptyList(),
     val message: String? = null,
 )
+
+private const val SUMMARY_SETTLE_MS = 60L
 
 /** What the selection contains, for the contextual bar. */
 data class SelectionSummary(val total: Int = 0, val inCloud: Int = 0)
@@ -84,10 +89,10 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
 
     /** Photos on the device regardless of search and filters, for "312 de 1 204". */
     val totalInLibrary: StateFlow<Int> = c.db.media().observePresentCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-    val folders: StateFlow<List<FolderCount>> = c.db.media().observeFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val folders: StateFlow<List<FolderCount>> = c.db.media().observeFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(0), emptyList())
 
     /** Photos with no capture date, for the filter sheet. */
-    val undatedCount: StateFlow<Int> = c.db.media().observeUndatedCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val undatedCount: StateFlow<Int> = c.db.media().observeUndatedCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(0), 0)
 
     /** (waiting or uploading, failed): the quiet backup line above the grid. */
     val backupGlance: StateFlow<Pair<Int, Int>> = c.db.media().observeCounts().map { counts ->
@@ -96,24 +101,34 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
             n(com.s3vault.app.domain.SyncState.FAILED)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0)
 
-    private val albums = c.db.albums().observeAlbums().map { l -> l.map { it.toDomain() } }
+    /**
+     * The albums to pick from. Only collected while the "add to album" sheet is open: the query joins several tables and
+     * SQLite re-runs it after any write to the media table, so it must not run behind the grid all the time (a backup, or
+     * queueing 300 photos, writes constantly).
+     */
+    val albums: StateFlow<List<Album>> = c.db.albums().observeAlbums().map { l -> l.map { it.toDomain() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(0), emptyList())
 
-    val state: StateFlow<GalleryUiState> = combine(access, selected, refreshing, error, albums, message) { values ->
+    val state: StateFlow<GalleryUiState> = combine(access, selected, refreshing, error, message) { values ->
         @Suppress("UNCHECKED_CAST")
         GalleryUiState(
             access = values[0] as MediaAccess,
             selected = values[1] as Set<Long>,
             refreshing = values[2] as Boolean,
             error = values[3] as String?,
-            albums = values[4] as List<Album>,
-            message = values[5] as String?,
+            message = values[4] as String?,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GalleryUiState(c.mediaAccess()))
 
+    /**
+     * "12 con copia en S3" for the selection bar. The count itself comes from SQLite (one COUNT per 400 ids), and rapid taps are
+     * merged into one query: tapping ten photos in a second asks the database once, not ten times. The size shown is always exact.
+     */
     val selectionSummary: StateFlow<SelectionSummary> = combine(selected, c.db.media().observePresentCount()) { ids, _ -> ids }
+        .debounce { if (it.isEmpty()) 0L else SUMMARY_SETTLE_MS }
         .mapLatest { ids ->
             if (ids.isEmpty()) SelectionSummary()
-            else SelectionSummary(ids.size, ids.chunked(500).sumOf { c.db.media().countWithRemote(it) })
+            else SelectionSummary(ids.size, withContext(Dispatchers.IO) { ids.chunked(400).sumOf { c.db.media().countWithRemote(it) } })
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SelectionSummary())
 
     init {
@@ -126,18 +141,24 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** Re-reads the permission state and rescans MediaStore on a background dispatcher (the scanner switches to IO). */
-    fun refresh() {
+    /**
+     * Re-reads the permission state and rescans MediaStore on a background dispatcher (the scanner switches to IO).
+     * [force] is an explicit request (pull to refresh, retry, a permission change): it always scans and shows the refresh
+     * indicator. Without it (coming back to the app) the scan only runs when MediaStore changed since the last one.
+     */
+    fun refresh(force: Boolean = true) {
         access.value = c.mediaAccess()
         viewModelScope.launch {
-            refreshing.value = true
+            // The very first scan of the process shows as work in progress (an empty library would otherwise flash "no photos").
+            val indicator = force || !c.library.hasScanned
+            if (indicator) refreshing.value = true
             try {
-                c.library.refresh()
+                c.library.refresh(force)
                 error.value = null
             } catch (e: Exception) {
                 error.value = "No se pudo leer la galería: " + Redactor.describe(e)
             } finally {
-                refreshing.value = false
+                if (indicator) refreshing.value = false
             }
         }
     }
@@ -200,9 +221,15 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
     fun isSectionSelected(key: Int): Boolean = key in selectedSections.value
     val sectionSelection: StateFlow<Set<Int>> get() = selectedSections
 
-    /** The selected photos, read from the database (the grid only holds a page at a time). */
-    suspend fun selectedItems(): List<MediaItem> =
-        selected.value.toList().chunked(500).flatMap { c.db.media().getAll(it) }.map(MediaItemEntity::toDomain)
+    /** The selected photos, read from the database (the grid only holds a page at a time). Reading and mapping run off the main thread. */
+    suspend fun selectedItems(): List<MediaItem> = withContext(Dispatchers.IO) {
+        selected.value.toList().chunked(400).flatMap { c.db.media().getAll(it) }.map(MediaItemEntity::toDomain)
+    }
+
+    /** What the delete flow needs for the selection, built off the main thread (a "select all" can be thousands of rows). */
+    suspend fun selectedDeleteEntries(): List<DeleteEntry> = withContext(Dispatchers.IO) {
+        selected.value.toList().chunked(400).flatMap { c.db.media().getAll(it) }.map { it.toDomain().toDeleteEntry() }
+    }
 
     fun backupSelected() {
         val ids = selected.value.toList()

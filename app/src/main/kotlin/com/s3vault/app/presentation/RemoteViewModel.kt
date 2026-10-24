@@ -24,6 +24,7 @@ import com.s3vault.app.settings.GridDensity
 import com.s3vault.app.sync.ListingResult
 import com.s3vault.app.sync.PreviewResult
 import com.s3vault.app.sync.Progress
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,8 +34,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class RemoteUiState(
     val configured: Boolean = false,
@@ -68,6 +71,18 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
     private val selectedSections = MutableStateFlow<Set<Int>>(emptySet())
     val selectedKeys: StateFlow<Set<String>> = selection
     val sectionSelection: StateFlow<Set<Int>> = selectedSections
+
+    /**
+     * How many of the selected objects also exist on this device, for the selection bar. One COUNT per 400 keys in SQLite and
+     * merged for rapid taps: it used to re-read and map every selected row after every single tap.
+     */
+    val alsoLocal: StateFlow<Int> = selection
+        .debounce { if (it.isEmpty()) 0L else 60L }
+        .mapLatest { keys ->
+            if (keys.isEmpty()) 0
+            else withContext(Dispatchers.IO) { keys.toList().chunked(400).sumOf { c.db.remote().countAvailableLocally(it) } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val query: StateFlow<LibraryQuery> = store.cloud
     val density: StateFlow<GridDensity> = store.density
@@ -160,8 +175,9 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** The selected objects, read from the database (the grid only holds a page at a time). */
-    suspend fun selectedObjects(): List<RemoteObject> =
-        selection.value.toList().chunked(500).flatMap { c.remotePage(c.db.remote().getByKeys(it)) }
+    suspend fun selectedObjects(): List<RemoteObject> = withContext(Dispatchers.IO) {
+        selection.value.toList().chunked(400).flatMap { c.remotePage(c.db.remote().getByKeys(it)) }
+    }
 
     // ------------------------------------------------------------------ listing, previews, restore
 

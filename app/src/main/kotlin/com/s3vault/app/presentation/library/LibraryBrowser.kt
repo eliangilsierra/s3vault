@@ -5,6 +5,7 @@ import com.s3vault.app.domain.library.GroupBy
 import com.s3vault.app.domain.library.LibraryQuery
 import com.s3vault.app.domain.library.LibraryScope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What the screen needs to draw one gallery: how it is divided, how many items match, and whether that is known yet. */
 data class BrowseState(
@@ -43,6 +45,8 @@ class LibraryBrowser<T : Any>(
     pageSize: Int = 96,
     /** Bursts of changes (a backup flipping states) are merged into one refresh per this many milliseconds. */
     private val settleMs: Long = 150,
+    /** Where the layout of a large library is computed; tests run it inline. */
+    private val computeContext: kotlin.coroutines.CoroutineContext = Dispatchers.Default,
 ) {
     @Volatile private var current: LibraryQuery = queries.value
 
@@ -61,12 +65,24 @@ class LibraryBrowser<T : Any>(
             if (group != GroupBy.NONE) observeDays(q).map { days -> days to days.sumOf { it.n } }
             else observeCount(q).map { emptyList<DayCount>() to it }
         var first = true
+        var lastDays: List<DayCount>? = null
+        var lastTotal = -1
         source.conflate().collect { (days, total) ->
             if (!first) delay(settleMs)
             current = q
-            val layout = LibraryLayout.from(days, group).let { if (group == GroupBy.NONE) LibraryLayout.flat(total) else it }
+            if (!first && total == lastTotal && days == lastDays) {
+                // Same photos in the same places (a backup changed a badge, say): only the cells' content is stale. Keeping
+                // the layout object means the grid does not rebuild its item list or restart its scroll bookkeeping.
+                window.invalidate()
+                return@collect
+            }
+            val layout = withContext(computeContext) {
+                LibraryLayout.from(days, group).let { if (group == GroupBy.NONE) LibraryLayout.flat(total) else it }
+            }
             if (first) window.reset(total) else { window.setSize(total); window.invalidate() }
             _state.value = BrowseState(q, layout, days, total, ready = true)
+            lastDays = days
+            lastTotal = total
             first = false
         }
     }

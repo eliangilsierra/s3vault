@@ -82,7 +82,6 @@ import com.s3vault.app.presentation.GridSkeleton
 import com.s3vault.app.presentation.MediaCell
 import com.s3vault.app.presentation.delete.DeleteHost
 import com.s3vault.app.presentation.delete.DeleteViewModel
-import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.library.ActiveChipsRow
 import com.s3vault.app.presentation.library.CellSkeleton
 import com.s3vault.app.presentation.library.DensityMenu
@@ -139,7 +138,6 @@ fun GalleryScreen(
     val uploads by vm.uploads.collectAsStateWithLifecycle()
     val summary by vm.selectionSummary.collectAsStateWithLifecycle()
     val total by vm.totalInLibrary.collectAsStateWithLifecycle()
-    val folders by vm.folders.collectAsStateWithLifecycle()
     val glance by vm.backupGlance.collectAsStateWithLifecycle()
     val sectionSelection by vm.sectionSelection.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -157,7 +155,7 @@ fun GalleryScreen(
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
 
     // Rescan whenever the screen is shown (new photos, permission changes from system settings).
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh(force = false) }
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); vm.dismissMessage() }
     }
@@ -196,7 +194,7 @@ fun GalleryScreen(
                         actions = {
                             IconButton(onClick = vm::selectAllMatching) { Icon(Icons.Filled.SelectAll, "Seleccionar todo") }
                             IconButton(onClick = vm::backupSelected) { Icon(Icons.Filled.CloudUpload, "Respaldar en S3") }
-                            IconButton(onClick = { scope.launch { deleteVm.request(vm.selectedItems().map { it.toDeleteEntry() }) } }) {
+                            IconButton(onClick = { scope.launch { deleteVm.request(vm.selectedDeleteEntries()) } }) {
                                 Icon(Icons.Filled.Delete, "Eliminar…", tint = MaterialTheme.colorScheme.error)
                             }
                             Box {
@@ -336,8 +334,9 @@ fun GalleryScreen(
     }
 
     if (albumSheet) {
+        val albums by vm.albums.collectAsStateWithLifecycle()
         AddToAlbumSheet(
-            albums = state.albums.map { it.id to it.name },
+            albums = albums.map { it.id to it.name },
             onPick = { vm.addSelectedToAlbum(it); albumSheet = false },
             onCreate = { vm.createAlbumWithSelected(it); albumSheet = false },
             onDismiss = { albumSheet = false },
@@ -346,6 +345,8 @@ fun GalleryScreen(
 
     if (filterSheet) {
         val undated by vm.undatedCount.collectAsStateWithLifecycle()
+        // Grouping every folder is a scan of the whole table: only done while the sheet that lists them is open.
+        val folders by vm.folders.collectAsStateWithLifecycle()
         LibraryFilterSheet(
             initial = query.filters,
             config = FilterSheetConfig(LibraryScope.LOCAL, folders, undated),

@@ -57,7 +57,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -173,8 +172,8 @@ fun RemoteScreen(
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val selecting = selected.isNotEmpty()
-    // How many of the selected objects also exist on this device (read from the database: the grid holds one page at a time).
-    val alsoLocal by produceState(0, selected) { value = if (selected.isEmpty()) 0 else vm.selectedObjects().count { it.availableLocally } }
+    // How many of the selected objects also exist on this device (a COUNT in the database, merged for rapid taps).
+    val alsoLocal by vm.alsoLocal.collectAsStateWithLifecycle()
     val layout = browse.layout
     val parsed = remember(query.search) { SearchParser.parse(query.search) }
     val chips = filterChips(query.filters) { vm.setFilters(it) }
