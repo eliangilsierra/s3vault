@@ -15,6 +15,7 @@ import com.s3vault.app.sync.CloudDeleteResult
 import com.s3vault.app.sync.DeleteEntry
 import com.s3vault.app.sync.DeleteImpact
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 fun MediaItem.toDeleteEntry() = DeleteEntry(displayName, mediaStoreId, uri, remoteKey, hasLocalCopy = present)
 
@@ -37,7 +39,10 @@ sealed interface DeleteUiState {
 
     data class ConfirmCloud(val entries: List<DeleteEntry>, val impact: DeleteImpact, val bucket: String?) : DeleteUiState
 
-    /** [total] <= 0 means indeterminate. */
+    /**
+     * Work in progress. It is shown as a slim bar, never as a modal: the gallery stays usable underneath.
+     * [total] <= 0 means the amount of work is not known (the bar is then indeterminate, not a made-up percentage).
+     */
     data class Working(val message: String, val done: Int, val total: Int, val cancellable: Boolean) : DeleteUiState
 
     /** Android's own confirmation dialog. The host launches [request] once ([launched] guards against re-launching after rotation). */
@@ -58,9 +63,14 @@ sealed interface DeleteEvent {
     data class Message(val text: String) : DeleteEvent
 }
 
+private fun items(n: Int) = if (n == 1) "1 elemento" else "$n elementos"
+
 /**
  * Deletion of local files and of S3 objects. They are two distinct operations with their own confirmation, and this
  * class has no path that performs both from a single user choice.
+ *
+ * Only one deletion runs at a time in the whole app ([AppContainer.deleteGate]); asking for another while one is in
+ * progress is answered with a message instead of being silently dropped or queued behind the user's back.
  */
 class DeleteViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow<DeleteUiState>(DeleteUiState.Idle)
@@ -70,6 +80,7 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
     val events: SharedFlow<DeleteEvent> = _events.asSharedFlow()
 
     private var job: Job? = null
+    private var holdsGate = false
 
     // Local deletion bookkeeping: chunks still to confirm with Android, and everything that was requested.
     private val chunks = ArrayDeque<List<DeleteEntry>>()
@@ -78,11 +89,41 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
 
     private var lastCloudEntries: List<DeleteEntry> = emptyList()
 
+    // ------------------------------------------------------------------ the one-at-a-time gate
+
+    private fun acquire(): Boolean {
+        if (holdsGate) return true
+        if (!c.deleteGate.compareAndSet(false, true)) return false
+        holdsGate = true
+        return true
+    }
+
+    private fun release() {
+        if (holdsGate) { holdsGate = false; c.deleteGate.set(false) }
+    }
+
+    /** True (and says so) when another deletion is running; a new one must wait for it to finish. */
+    private fun busy(): Boolean {
+        if (!c.deleteGate.get() || holdsGate) return false
+        _events.tryEmit(DeleteEvent.Message("Ya hay una eliminación en curso. Espera a que termine."))
+        return true
+    }
+
+    override fun onCleared() {
+        // The screen is gone: a deletion waiting for Android's dialog can no longer be settled from here.
+        release()
+    }
+
     // ------------------------------------------------------------------ entry points
 
     /** Local files (gallery, viewer, albums): the user chooses which copy to delete. */
     fun request(entries: List<DeleteEntry>) {
-        if (entries.isEmpty() || _state.value != DeleteUiState.Idle) return
+        if (entries.isEmpty()) return
+        if (_state.value != DeleteUiState.Idle) {
+            if (_state.value is DeleteUiState.Working) _events.tryEmit(DeleteEvent.Message("Ya hay una eliminación en curso. Espera a que termine."))
+            return
+        }
+        if (busy()) return
         _state.value = DeleteUiState.Choose(entries, DeleteImpact.of(entries))
     }
 
@@ -91,14 +132,25 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
      * strong the warning is, so it is checked against the real files right now rather than trusting the list on screen.
      */
     fun requestCloud(objects: List<RemoteObject>) {
-        if (objects.isEmpty() || _state.value != DeleteUiState.Idle) return
+        if (objects.isEmpty()) return
+        if (_state.value != DeleteUiState.Idle) {
+            if (_state.value is DeleteUiState.Working) _events.tryEmit(DeleteEvent.Message("Ya hay una eliminación en curso. Espera a que termine."))
+            return
+        }
+        if (busy()) return
         viewModelScope.launch {
-            val onDevice = objects.map { it.key }.chunked(400).flatMap { c.db.media().withRemoteKeys(it) }
-                .filter { it.present }.mapNotNull { it.remoteKey }.toSet()
-            val entries = objects.map { o ->
-                val restored = c.db.remote().get(o.key)?.restoredUri
-                val hasLocal = o.key in onDevice || (restored != null && c.mediaGateway.exists(restored))
-                DeleteEntry(o.displayName, null, null, o.key, hasLocalCopy = hasLocal)
+            // Two queries per 400 objects and one MediaStore round trip for the restored copies, not one query per object.
+            val entries = withContext(Dispatchers.IO) {
+                val keys = objects.map { it.key }
+                val onDevice = keys.chunked(400).flatMap { c.db.media().withRemoteKeys(it) }
+                    .filter { it.present }.mapNotNull { it.remoteKey }.toHashSet()
+                val restored = keys.chunked(400).flatMap { c.db.remote().getByKeys(it) }
+                    .mapNotNull { r -> r.restoredUri?.let { r.key to it } }.toMap()
+                val restoredAlive = if (restored.isEmpty()) emptySet() else c.mediaGateway.existing(restored.values.toList())
+                objects.map { o ->
+                    val hasLocal = o.key in onDevice || (restored[o.key]?.let { it in restoredAlive } == true)
+                    DeleteEntry(o.displayName, null, null, o.key, hasLocalCopy = hasLocal)
+                }
             }
             if (_state.value == DeleteUiState.Idle) showCloudConfirmation(entries)
         }
@@ -129,6 +181,7 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
         val s = _state.value as? DeleteUiState.ConfirmDevice ?: return
         val targets = s.entries.filter { it.hasLocalCopy && it.uri != null && (!onlyBackedUp || it.remoteKey != null) }
         if (targets.isEmpty()) { _state.value = DeleteUiState.Idle; return }
+        if (!acquire()) { _state.value = DeleteUiState.Idle; busy(); return }
         requested = targets
         chunks.clear()
         // One Android dialog per chunk (binder limits) on Android 11+, one per file on Android 10.
@@ -163,13 +216,22 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
         if (chunk == null) { finishDevice(); return }
         currentChunk = chunk
         if (PlatformMediaDelete.supportsBatchRequest) {
-            try {
-                val sender = PlatformMediaDelete.batchRequest(c.appContext, chunk.map { Uri.parse(it.uri!!) })
-                _state.value = DeleteUiState.SystemDialog(sender, launched = false)
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Android refused to build the delete request: " + e::class.java.simpleName)
-                chunks.clear()
-                finishDevice()
+            // Building the request is a synchronous call into MediaProvider that grows with the number of files (about
+            // 200 ms for 300 on a fast machine): it must not run on the main thread.
+            _state.value = DeleteUiState.Working("Preparando la eliminación de ${items(chunk.size)}…", 0, 0, cancellable = false)
+            viewModelScope.launch {
+                try {
+                    val sender = withContext(Dispatchers.IO) {
+                        PlatformMediaDelete.batchRequest(c.appContext, chunk.map { Uri.parse(it.uri!!) })
+                    }
+                    _state.value = DeleteUiState.SystemDialog(sender, launched = false)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    SafeLog.w(TAG, "Android refused to build the delete request: " + e::class.java.simpleName)
+                    chunks.clear()
+                    finishDevice()
+                }
             }
         } else {
             val uri = Uri.parse(chunk.single().uri!!)
@@ -186,7 +248,7 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
     /** Whatever the dialogs said, the index is settled from what Android really did. */
     private fun finishDevice() {
         val entries = requested
-        _state.value = DeleteUiState.Working("Actualizando la biblioteca…", 0, 0, cancellable = false)
+        _state.value = DeleteUiState.Working("Actualizando la biblioteca (${items(entries.size)})…", 0, 0, cancellable = false)
         viewModelScope.launch {
             val text = try {
                 val r = c.localDeletion.settle(entries)
@@ -199,9 +261,13 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
                         if (r.remaining > 0) append(" ${r.remaining} no se eliminaron.")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 SafeLog.e(TAG, "Settling local deletion failed", e)
                 "Se eliminaron archivos, pero no se pudo actualizar la biblioteca. Desliza para actualizar."
+            } finally {
+                release()
             }
             _state.value = DeleteUiState.Idle
             _events.tryEmit(DeleteEvent.Message(text))
@@ -231,20 +297,27 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
     private fun runCloud(entries: List<DeleteEntry>) {
         val keys = entries.mapNotNull { it.remoteKey }.distinct()
         if (keys.isEmpty()) { _state.value = DeleteUiState.Idle; return }
+        if (!acquire()) { _state.value = DeleteUiState.Idle; busy(); return }
         lastCloudEntries = entries
         _events.tryEmit(DeleteEvent.Started)
         var processed = 0
-        _state.value = DeleteUiState.Working("Eliminando de S3…", 0, keys.size, cancellable = true)
+        val label = "Eliminando ${items(keys.size)} de S3…"
+        _state.value = DeleteUiState.Working(label, 0, keys.size, cancellable = true)
         job = viewModelScope.launch {
             try {
                 val r = c.cloudDeletion.delete(keys) { done, total ->
                     processed = done
-                    _state.value = DeleteUiState.Working("Eliminando de S3…", done, total, cancellable = true)
+                    _state.value = DeleteUiState.Working(label, done, total, cancellable = true)
                 }
                 finishCloud(r, keys.size)
             } catch (e: CancellationException) {
                 _state.value = DeleteUiState.Idle
-                _events.tryEmit(DeleteEvent.Message("Cancelado tras procesar $processed de ${keys.size}. Lo ya eliminado de S3 no se puede recuperar."))
+                _events.tryEmit(
+                    DeleteEvent.Message(
+                        "Cancelado tras procesar $processed de ${keys.size}. Lo ya eliminado de S3 no se puede recuperar. " +
+                            "Actualiza la lista de S3 para ver el estado real.",
+                    ),
+                )
                 throw e
             } catch (e: RemoteException) {
                 _state.value = DeleteUiState.Idle
@@ -253,6 +326,8 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
                 SafeLog.e(TAG, "Cloud deletion failed unexpectedly", e)
                 _state.value = DeleteUiState.Idle
                 _events.tryEmit(DeleteEvent.Message(RemoteErrorKind.UNKNOWN.userMessage))
+            } finally {
+                release()
             }
         }
     }
