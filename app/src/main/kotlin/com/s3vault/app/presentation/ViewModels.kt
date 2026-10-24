@@ -400,7 +400,8 @@ class SecurityViewModel(private val c: AppContainer) : ViewModel() {
         ui.update { it.copy(message = "Credenciales eliminadas de este dispositivo.") }
     }
 
-    fun refreshStatus() = c.credentials.refreshStatus()
+    /** Re-evaluates expiry off the main thread: it decrypts the stored credentials through the Keystore. */
+    fun refreshStatus() { viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { c.credentials.refreshStatus() } }
 }
 
 // ---------------------------------------------------------------- General settings
