@@ -68,6 +68,14 @@ Informes: `app/build/reports/tests/`, `app/build/outputs/androidTest-results/`.
 
 Emulador: cualquier imagen API 29+ vale. Usa Espresso 3.7.0 (ya fijado): versiones anteriores fallan en Android 17 por una API oculta eliminada. Si tu SDK no trae `cmdline-tools` (sin `avdmanager`) puedes crear el AVD a mano con `config.ini` apuntando a la imagen instalada. Los tests de UI limpian credenciales y configuración antes de cada caso.
 
+### Pruebas de rendimiento de operaciones masivas
+
+`BulkOperationsBenchTest`, `BulkDeletePerfTest` y `BulkSelectionPerfTest` miden en el dispositivo (tiempo de hilo de UI por
+fotograma, latencia del hilo principal, memoria, duración de cada operación) y escriben el resultado en Logcat con la
+etiqueta `BulkPerf`; `BulkCloudDeleteUiTest` comprueba que un borrado masivo en S3 no bloquea la pantalla, que se puede
+cancelar y que un fallo parcial se informa y se reintenta solo para lo fallido. Cifras, método y límites: [performance.md](performance.md).
+Estas pruebas crean fotos en `Pictures/S3VaultBulkPerf`; si una ejecución se interrumpe pueden quedar allí.
+
 ### Notas de las pruebas de borrado y vista previa
 
 - Los archivos que crea la propia prueba son suyos: Android los deja borrar sin preguntar con `ContentResolver.delete`, pero `createDeleteRequest` sigue mostrando el diálogo. `PhotoManagementUiTest` lo gestiona: Compose solo dibuja fotogramas mientras el hilo de pruebas está dentro de una llamada a Compose, así que tras la confirmación hay que ejecutar un `waitForIdle()` antes de esperar a que Android muestre su diálogo, y se pulsa «Permitir» por posición relativa (calibrada en el AVD de 1080×2400).
