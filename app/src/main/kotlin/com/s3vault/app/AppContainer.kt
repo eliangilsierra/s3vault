@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import com.s3vault.app.auth.CredentialsRepository
 import com.s3vault.app.data.local.AppDatabase
+import com.s3vault.app.data.local.MediaChangeTracker
 import com.s3vault.app.data.local.MediaIndexer
 import com.s3vault.app.data.local.ExifThumbnailReader
 import com.s3vault.app.data.local.MediaStoreGateway
@@ -60,8 +61,11 @@ class AppContainer(private val context: Context) {
     val scheduler by lazy { WorkManagerScheduler(context) }
     private val mediaSource by lazy { MediaStoreSource(context) }
 
+    /** Counts MediaStore changes, so returning to the app only rescans the library when something really changed. */
+    val mediaChanges: MediaChangeTracker by lazy { MediaChangeTracker(context).also { it.start() } }
+
     val library: LibraryRepository by lazy {
-        LibraryRepository(mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() })
+        LibraryRepository(mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() }, changes = mediaChanges)
     }
     val catalog by lazy {
         RemoteCatalog(
@@ -88,6 +92,9 @@ class AppContainer(private val context: Context) {
 
     /** Previews of S3 objects, cached under cacheDir (the system may clear it; it only costs a few KB to refill). */
     val previews by lazy { RemotePreviewRepository(File(context.cacheDir, "remote-previews"), remoteProvider, ExifThumbnailReader()) }
+
+    /** Set while a deletion (device or S3) runs anywhere in the app, so two bulk deletions never overlap. */
+    val deleteGate = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Two separate, explicit deletions: S3 objects, and the settling of files Android removed from the device. */
     val cloudDeletion by lazy { CloudDeletionController(db, remoteProvider, { previews.evict(it) }, events) }

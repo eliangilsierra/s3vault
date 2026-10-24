@@ -17,6 +17,27 @@ data class RemoteDateRow(val key: String, val effectiveDateMs: Long, val lastMod
 
 data class LocalDateRow(val mediaStoreId: Long, val dateTakenMs: Long)
 
+/** What a library scan needs to know about an indexed row to decide whether it changed. */
+data class IndexRow(
+    val mediaStoreId: Long,
+    val uri: String,
+    val displayName: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val dateModifiedSec: Long,
+    val dateTakenMs: Long,
+    val width: Int,
+    val height: Int,
+    val folderName: String,
+    val present: Boolean,
+    val dayKey: Int,
+    val dateSource: com.s3vault.app.domain.library.DateSource,
+    val syncState: SyncState,
+    val remoteKey: String?,
+    val backedUpSizeBytes: Long?,
+    val backedUpDateModifiedSec: Long?,
+)
+
 @Dao
 interface MediaDao {
     /** Local files whose content is known (hashed before an upload, or linked to a remote version). */
@@ -73,6 +94,16 @@ interface MediaDao {
 
     @Query("SELECT * FROM media_items")
     suspend fun getEverything(): List<MediaItemEntity>
+
+    /**
+     * Only the columns a library scan compares, so reconciling a large library does not materialise every full row
+     * (see [com.s3vault.app.data.local.MediaIndexer]).
+     */
+    @Query(
+        "SELECT mediaStoreId, uri, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height, folderName, present, " +
+            "dayKey, dateSource, syncState, remoteKey, backedUpSizeBytes, backedUpDateModifiedSec FROM media_items",
+    )
+    suspend fun indexRows(): List<IndexRow>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<MediaItemEntity>)
@@ -141,6 +172,10 @@ interface MediaDao {
 
     @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0, backupExcluded = 0 WHERE mediaStoreId = :id AND syncState IN ('LOCAL_ONLY', 'FAILED')")
     suspend fun enqueue(id: Long, nowMs: Long): Int
+
+    /** [enqueue] for many rows in one statement (and so one Room invalidation instead of one per photo). Returns how many moved. */
+    @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0, backupExcluded = 0 WHERE mediaStoreId IN (:ids) AND syncState IN ('LOCAL_ONLY', 'FAILED')")
+    suspend fun enqueueAll(ids: List<Long>, nowMs: Long): Int
 
     @Query("UPDATE media_items SET thumbnailUploaded = 1 WHERE mediaStoreId = :id AND remoteVersionId = :versionId")
     suspend fun markThumbnailUploaded(id: Long, versionId: String)
@@ -285,6 +320,20 @@ interface RemoteDao {
 
     @Query("UPDATE remote_objects SET state = :to, lastError = :error WHERE key = :key AND state = :from")
     suspend fun transition(key: String, from: SyncState, to: SyncState, error: String?): Int
+
+    /** [transition] for many objects in one statement. */
+    @Query("UPDATE remote_objects SET state = :to, lastError = :error WHERE key IN (:keys) AND state = :from")
+    suspend fun transitionAll(keys: List<String>, from: SyncState, to: SyncState, error: String?): Int
+
+    /**
+     * How many of these objects also exist on this device: a present local file linked to the key, or a restored copy.
+     * Answers the selection bar with one COUNT instead of reading every selected row.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM remote_objects r WHERE r.`key` IN (:keys) AND (r.restoredUri IS NOT NULL OR " +
+            "EXISTS (SELECT 1 FROM media_items m WHERE m.remoteKey = r.`key` AND m.present = 1))",
+    )
+    suspend fun countAvailableLocally(keys: List<String>): Int
 
     @Query("UPDATE remote_objects SET restoredUri = :uri, state = 'REMOTE_ONLY', lastError = NULL WHERE key = :key")
     suspend fun markRestored(key: String, uri: String)
