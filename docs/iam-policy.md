@@ -20,8 +20,14 @@ Sustituye estos marcadores en todos los ejemplos:
 | Subir y leer las miniaturas (`PREFIX/.s3vault/thumbs/…`) y la cabecera de un JPEG con `Range` | `s3:PutObject`, `s3:GetObject` | Ya cubiertos por `arn:aws:s3:::BUCKET_NAME/PREFIX/*`: **no hacen falta permisos nuevos** |
 | Estimar el coste mensual (Ajustes → Almacenamiento y costes) | `s3:ListBucket` | El mismo listado de `PREFIX/photos/` de arriba: **no hace falta ningún permiso nuevo** ([cost-estimate.md](cost-estimate.md)) |
 | «Eliminar de S3» (**opcional**) | `s3:DeleteObject` (también para `DeleteObjects`) | Solo `…/PREFIX/photos/*` y `…/PREFIX/.s3vault/thumbs/*` |
+| Auditoría del respaldo y «Liberar espacio» (comprobación previa al borrado local) | `s3:ListBucket`, `s3:GetObject` (`HEAD`) | Los mismos de arriba: **no hacen falta permisos nuevos** |
+| Álbumes privados, duplicados, álbumes inteligentes, búsqueda por contenido | Ninguna | No hablan con S3 |
 
 Distinción clave: `ListBucket` se concede sobre el ARN del *bucket*; `PutObject`/`GetObject` sobre ARN de *objetos* (`.../*`). Mezclarlos es el error de configuración más común.
+
+## Herramientas de la biblioteca: sin permisos nuevos
+
+Las herramientas añadidas ([library-tools.md](library-tools.md)) usan **solo** `ListBucket` y `GetObject` (`HEAD`), ya concedidos, y **ninguna escribe ni borra en S3**: la auditoría es de solo lectura y «Liberar espacio» solo borra del dispositivo. La **política recomendada con el `Deny` de borrado sigue siendo válida tal cual**: con ella, todo lo anterior funciona. La única descarga que no es de S3 es el modelo opcional de búsqueda por contenido (HTTPS a `huggingface.co`, ver [semantic-search.md](semantic-search.md)), que no usa tus credenciales.
 
 ## Política de identidad (adjúntala al usuario o rol IAM dedicado)
 

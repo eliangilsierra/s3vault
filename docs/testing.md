@@ -4,10 +4,12 @@
 
 | Suite | Comando | Resultado |
 |---|---|---|
-| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **333 pruebas, 0 fallos** |
-| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **54 pruebas, 0 fallos** |
-| Lint | `./gradlew lintDebug` | 0 errores, 38 avisos (versiones/estilo) |
-| Build release con R8 | `./gradlew assembleRelease` | OK (≈ 5,7 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
+| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **543 pruebas, 0 fallos** |
+| Instrumentadas (emulador Android 17 / API 37, x86_64) | `adb shell am instrument -w com.s3vault.app.test/androidx.test.runner.AndroidJUnitRunner` (ver nota) | **113 pruebas, 0 fallos (una sola ejecución)** |
+| Lint | `./gradlew lintDebug` | 0 errores, 55 avisos (versiones, `UseKtx`, 4 de `android.media.ExifInterface`; ninguno de seguridad) |
+| Build release con R8 | `./gradlew assembleRelease` | OK. **33,5 MiB** por defecto (solo arm64), 53,1 MiB con arm64 + armv7, 119 MiB con las cuatro ABI (ONNX Runtime pesa 19–33 MiB por ABI: ver [semantic-search.md](semantic-search.md#peso-del-apk)). Compilada para x86_64 y firmada con la clave de depuración, **arranca en el emulador, abre Álbumes privados y crea el vault con el PIN real** (sin fallos de R8) |
+
+Nota sobre las instrumentadas: se lanzan con `am instrument` (no con la tarea `connected…` de Gradle, que desinstala la app y con ella el modelo de búsqueda copiado a mano al emulador). Dos suites **dependen del estado del dispositivo**: `SemanticModelDeviceTest` necesita el pack del modelo en el dispositivo (sin él se omite) y una biblioteca **sin cientos de fotos idénticas** (tres fotos iguales empatan en la similitud), y `SmartGalleryUiTest` ahora inserta sus propias fotos de relleno en el escenario que las necesita. Una ejecución anterior mostró un fallo suelto de `SmartAlbumsUiTest` (contador en vivo) que no se repitió en las ejecuciones siguientes ni al lanzarla sola; no se encontró la causa, así que se anota como **intermitente conocido**.
 
 Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pasado sin haberse ejecutado. Lo que **no** se ha podido ejecutar está en [Validación manual pendiente](#validación-manual-pendiente).
 
@@ -55,6 +57,25 @@ Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pas
 - **SDK real contra servidor simulado**: `MockWebServer` + AWS SDK for Kotlin (firma SigV4, paginación, errores XML, cabeceras de checksum). `S3RemoteStorage` acepta `endpointOverride` solo para esto; el código de producción nunca lo establece.
 - **Instrumentadas en dispositivo**: Keystore real, MediaStore real, Room real, SDK sobre ART, UI Compose real. `src/debug` permite HTTP a `localhost` únicamente para el servidor simulado (`FakeS3Dispatcher`, equivalente mínimo a S3: PUT/HEAD/GET/List, valida `x-amz-checksum-sha256`; además `Range`, `DeleteObjects` y los cuerpos `aws-chunked` que el SDK usa por HTTP). La política IAM «sin permiso de borrado» se simula con `allowDelete = false`.
 - **Tráfico real a AWS sin cuenta**: `RealAwsErrorClassificationTest` envía una solicitud HTTPS al endpoint real de S3 con la credencial de *ejemplo de la documentación de AWS* y un bucket inexistente; comprueba la clasificación (`403 InvalidAccessKeyId` ⇒ `CREDENTIALS_INVALID`) y que no se filtra nada. Se omite si el emulador no tiene Internet. No toca ningún recurso.
+
+## Funciones nuevas: herramientas de la biblioteca, búsqueda por contenido y álbumes privados
+
+| Función | Pruebas |
+|---|---|
+| Centro de sincronización | `SyncCenterTest` (recuentos, estados, reintentos, tareas interrumpidas), `SyncCenterUiTest` (pantalla real) |
+| Auditoría del respaldo | `IntegrityAuditorTest` (cada veredicto, «Falta» solo con listado completo, ETag solo por igualdad, solicitudes contadas, credenciales caducadas a mitad), `IntegrityUiTest` |
+| Liberar espacio | `SpaceRecoveryTest` (solo «Verificadas», reglas que solo acortan, puerta final con `HEAD`, nunca borra por estar en cola), `SpaceRecoveryUiTest` |
+| Duplicados | `SimilarityTest` (hash perceptual, agrupación), `DuplicateScannerTest` (hash por tamaño, grupos persistidos, descartes), `DuplicatesUiTest` |
+| Álbumes inteligentes | `SmartAlbumsTest` (filtro → SQL, recuentos en una pasada), `SmartAlbumsUiTest` |
+| Búsqueda por contenido | `SemanticTest` (codec int8, top-K, descarga reanudable con huellas, pack verificado), `ClipTokenizerTest` (coincidencia con el tokenizador de referencia), `QueryTranslatorTest`, `SemanticModelDeviceTest` (**modelo real** en el emulador: coseno frente a la referencia, relevancia, indexado), `SemanticSearchUiTest` |
+| Álbumes privados: cifrado | `VaultCryptoTest` (13: tamaños límite, alteración de cualquier byte, cortes, fragmentos reordenados/duplicados/entre archivos, clave equivocada, formato desconocido) |
+| Álbumes privados: sesión y almacén | `PrivateSessionTest` (8: ceros al bloquear, retraso de bloqueo, pantalla apagada), `PrivateVaultStoreTest` (21: **nada legible en la base ni en los archivos**, no se crea fila si falla, tamaño distinto rechazado, sacar solo tras verificar, original nunca tocado, bloqueo a mitad de lote, 150 fotos, clave perdida) |
+| Álbumes privados: pantallas | `PrivateAlbumsUiTest` (7, pantallas reales): mover desde la galería (originales intactos y archivos cifrados no-JPEG), entrada bloqueada y pantallas abiertas sustituidas al bloquear, visor y archivo alterado rechazado, sacar a la galería con los mismos bytes, sin bloqueo de pantalla, clave perdida, `FLAG_SECURE` |
+| Álbumes privados: Keystore real | `PrivateKeystoreDeviceTest` (4): clave del Keystore tras el *prompt* real del sistema con PIN (crear y volver a abrir dan la misma clave), cancelar, el almacén completo, clave envuelta alterada → «clave perdida», quitar el bloqueo de pantalla → Android borra la clave |
+| Migraciones | `MigrationTest` (6): 1→2, 2→3, 3→4, 4→5, **5→actual** (datos intactos, valores por defecto, tablas nuevas usables) y **10→11** (álbumes privados sin tocar nada más) |
+| Rendimiento | `BulkSelectionPerfTest`, `BulkDeletePerfTest`, `BulkOperationsBenchTest` (sin regresión), `PrivateVaultBenchTest` ([performance.md](performance.md#después-de-las-herramientas-de-la-biblioteca-y-los-álbumes-privados)) |
+
+Qué **no** se pudo probar con el dispositivo disponible: huella dactilar (el emulador solo tiene PIN), Android 10 (la rama de la clave con ventana de autenticación), un teléfono real, TalkBack, pantallas grandes y modo oscuro de las pantallas privadas (se revisaron capturas en claro), un bucket de AWS real.
 
 ## Ejecutar
 
