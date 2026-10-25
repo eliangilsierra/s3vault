@@ -25,7 +25,13 @@ fun interface RemoteContextProvider {
 }
 
 /** How the last pass over the bucket ended. Kept so the UI never presents a partial list as a complete inventory. */
-data class ListingResult(val atMs: Long, val complete: Boolean, val count: Int)
+data class ListingResult(
+    val atMs: Long,
+    val complete: Boolean,
+    val count: Int,
+    /** `region/bucket/prefix` the listing was taken from; empty when unknown. A listing of another bucket is never reused. */
+    val source: String = "",
+)
 
 /**
  * Remote catalog derived straight from the bucket: the key layout already carries assetId, versionId and
@@ -67,13 +73,13 @@ class RemoteCatalog(
                 val entities = page.mapNotNull { l ->
                     val parsed = ctx.keys.parse(l.key) ?: return@mapNotNull null
                     seen += l.key
-                    entityFor(l.key, parsed, l.sizeBytes, l.lastModifiedMs, previous[l.key], now, z)
+                    entityFor(l.key, parsed, l.sizeBytes, l.lastModifiedMs, previous[l.key], now, z, l.etag)
                 }
                 dao.upsertAll(entities)
             }
         } catch (e: Throwable) {
             // Earlier pages stay (they are valid), nothing is pruned, and the UI is told the inventory is incomplete.
-            onListed(ListingResult(nowMs(), complete = false, count = seen.size))
+            onListed(ListingResult(nowMs(), complete = false, count = seen.size, source = sourceOf(ctx)))
             throw e
         }
         val gone = dao.allKeys().filter { it !in seen }
@@ -83,9 +89,11 @@ class RemoteCatalog(
         if (inventory != null) {
             inventoryStore?.save(inventory.build(ctx.config?.region.orEmpty(), ctx.config?.bucket.orEmpty(), ctx.keys.prefix, nowMs(), pages))
         }
-        onListed(ListingResult(nowMs(), complete = true, count = seen.size))
+        onListed(ListingResult(nowMs(), complete = true, count = seen.size, source = sourceOf(ctx)))
         return seen.size
     }
+
+    private fun sourceOf(ctx: RemoteContext) = ctx.config?.let { "${it.region}/${it.bucket}/${it.prefix}" }.orEmpty()
 
     /**
      * Lists only when the cached listing is older than [maxAgeMs]. Used by backup runs, which need the listing just to avoid
@@ -137,6 +145,7 @@ class RemoteCatalog(
         old: RemoteObjectEntity?,
         now: Long,
         zone: ZoneId,
+        etag: String? = null,
     ): RemoteObjectEntity {
         // A capture date already learned is never downgraded by a later listing.
         val date = if (old != null && old.dateSource == DateSource.CAPTURE) {
@@ -160,6 +169,7 @@ class RemoteCatalog(
             uploadDayKey = DateKeys.dayKey(uploadedMs, zone),
             mediaKind = MediaKinds.fromName(parsed.fileName),
             metaChecked = old?.metaChecked ?: false,
+            etag = etag ?: old?.etag,
         )
     }
 }

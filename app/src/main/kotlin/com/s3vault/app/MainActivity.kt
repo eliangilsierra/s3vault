@@ -36,6 +36,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // The private albums lock when the app has been away longer than the user chose (see PrivateSession).
+        lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { container.privateSession.onAppBackgrounded() }
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { container.privateSession.onAppForegrounded() }
+        })
+
         setContent {
             val theme by container.settings.theme.collectAsState(initial = ThemeMode.SYSTEM)
             // System-bar icon colours follow the app theme (which may differ from the system theme).

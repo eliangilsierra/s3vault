@@ -89,6 +89,19 @@ class AppSettings(private val context: Context) {
         val listedAt = longPreferencesKey("remote_listed_at")
         val listedComplete = booleanPreferencesKey("remote_listed_complete")
         val listedCount = intPreferencesKey("remote_listed_count")
+        val listedSource = stringPreferencesKey("remote_listed_source")
+        val auditIntervalDays = intPreferencesKey("audit_interval_days")
+        val privateAutoLockMs = longPreferencesKey("private_auto_lock_ms")
+        val semanticEnabled = booleanPreferencesKey("semantic_enabled")
+        val semanticCharging = booleanPreferencesKey("semantic_only_charging")
+        val modelWifiOnly = booleanPreferencesKey("model_wifi_only")
+        val spaceFavorites = booleanPreferencesKey("space_excl_favorites")
+        val spaceRecentDays = intPreferencesKey("space_recent_days")
+        val spaceBackedDays = intPreferencesKey("space_backed_days")
+        val spaceFolders = androidx.datastore.preferences.core.stringSetPreferencesKey("space_excl_folders")
+        val spaceVideos = booleanPreferencesKey("space_videos")
+        val spaceAlbums = booleanPreferencesKey("space_keep_albums")
+        val spaceVerifiedHours = intPreferencesKey("space_verified_hours")
         val dayZone = stringPreferencesKey("day_zone")
         val libLocalSort = stringPreferencesKey("lib_local_sort")
         val libLocalDesc = booleanPreferencesKey("lib_local_desc")
@@ -142,13 +155,13 @@ class AppSettings(private val context: Context) {
 
     /** The last pass over the bucket, or null if it was never listed on this device. */
     val remoteListing: Flow<com.s3vault.app.sync.ListingResult?> = store.data.map { p ->
-        p[K.listedAt]?.let { com.s3vault.app.sync.ListingResult(it, p[K.listedComplete] ?: false, p[K.listedCount] ?: 0) }
+        p[K.listedAt]?.let { com.s3vault.app.sync.ListingResult(it, p[K.listedComplete] ?: false, p[K.listedCount] ?: 0, p[K.listedSource].orEmpty()) }
     }
 
     suspend fun saveRemoteListing(r: com.s3vault.app.sync.ListingResult) {
         store.edit {
             // An incomplete pass must not overwrite the time of the last complete one: the UI shows both honestly.
-            if (r.complete) { it[K.listedAt] = r.atMs; it[K.listedCount] = r.count }
+            if (r.complete) { it[K.listedAt] = r.atMs; it[K.listedCount] = r.count; it[K.listedSource] = r.source }
             it[K.listedComplete] = r.complete
         }
     }
@@ -202,6 +215,54 @@ class AppSettings(private val context: Context) {
         store.edit { it[K.inventoryAttemptMs] = atMs; it[K.inventoryError] = message.take(300) }
     }
 
+    /** Semantic search is opt-in: off until the user turns it on (which is also the moment the model is offered for download). */
+    val semanticEnabled: Flow<Boolean> = store.data.map { it[K.semanticEnabled] ?: false }
+    suspend fun setSemanticEnabled(v: Boolean) = store.edit { it[K.semanticEnabled] = v }.let { }
+
+    /** Index only while charging (the default: indexing a library is minutes to hours of CPU). */
+    val semanticOnlyCharging: Flow<Boolean> = store.data.map { it[K.semanticCharging] ?: true }
+    suspend fun setSemanticOnlyCharging(v: Boolean) = store.edit { it[K.semanticCharging] = v }.let { }
+
+    /** The model download (about 150 MB) waits for an unmetered network by default. */
+    val modelWifiOnly: Flow<Boolean> = store.data.map { it[K.modelWifiOnly] ?: true }
+    suspend fun setModelWifiOnly(v: Boolean) = store.edit { it[K.modelWifiOnly] = v }.let { }
+
+    /** The user's rules for what may be offered when freeing space. Cautious by default. */
+    val spaceRules: Flow<com.s3vault.app.domain.space.SafetyRules> = store.data.map { p ->
+        val d = com.s3vault.app.domain.space.SafetyRules()
+        com.s3vault.app.domain.space.SafetyRules(
+            excludeFavorites = p[K.spaceFavorites] ?: d.excludeFavorites,
+            keepRecentDays = (p[K.spaceRecentDays] ?: d.keepRecentDays).coerceIn(0, com.s3vault.app.domain.space.SafetyRules.MAX_DAYS),
+            minBackedUpDays = (p[K.spaceBackedDays] ?: d.minBackedUpDays).coerceIn(0, com.s3vault.app.domain.space.SafetyRules.MAX_DAYS),
+            excludedFolders = p[K.spaceFolders] ?: emptySet(),
+            includeVideos = p[K.spaceVideos] ?: d.includeVideos,
+            keepAlbumPhotos = p[K.spaceAlbums] ?: d.keepAlbumPhotos,
+            verifiedWithinHours = (p[K.spaceVerifiedHours] ?: d.verifiedWithinHours).coerceIn(1, 24 * 90),
+        )
+    }
+
+    suspend fun currentSpaceRules(): com.s3vault.app.domain.space.SafetyRules = spaceRules.first()
+
+    suspend fun saveSpaceRules(r: com.s3vault.app.domain.space.SafetyRules) {
+        store.edit {
+            it[K.spaceFavorites] = r.excludeFavorites
+            it[K.spaceRecentDays] = r.keepRecentDays
+            it[K.spaceBackedDays] = r.minBackedUpDays
+            it[K.spaceFolders] = r.excludedFolders
+            it[K.spaceVideos] = r.includeVideos
+            it[K.spaceAlbums] = r.keepAlbumPhotos
+            it[K.spaceVerifiedHours] = r.verifiedWithinHours
+        }
+    }
+
+    /** Days between automatic listing audits; 0 (the default) means audits only run when the user starts them. */
+    val auditIntervalDays: Flow<Int> = store.data.map { it[K.auditIntervalDays] ?: 0 }
+    suspend fun setAuditIntervalDays(days: Int) = store.edit { it[K.auditIntervalDays] = days.coerceIn(0, 90) }.let { }
+
+    /** How long the app may stay out of the foreground before the private albums lock again (0 = as soon as it is left). */
+    val privateAutoLockMs: Flow<Long> = store.data.map { it[K.privateAutoLockMs] ?: com.s3vault.app.domain.privacy.PrivateSession.DEFAULT_AUTO_LOCK_MS }
+    suspend fun setPrivateAutoLockMs(ms: Long) = store.edit { it[K.privateAutoLockMs] = ms.coerceIn(0, 3_600_000) }.let { }
+
     suspend fun currentS3Config(): S3Config? = s3Config.first()
     suspend fun currentBackup(): BackupSettings = backup.first()
 
@@ -241,7 +302,7 @@ class AppSettings(private val context: Context) {
             it.remove(K.region); it.remove(K.bucket); it.remove(K.prefix); it.remove(K.authMethod)
             it.remove(K.connVerifiedAt); it.remove(K.connOk); it.remove(K.connMessage)
             it[K.needsCredentials] = false
-            it.remove(K.listedAt); it.remove(K.listedComplete); it.remove(K.listedCount)
+            it.remove(K.listedAt); it.remove(K.listedComplete); it.remove(K.listedCount); it.remove(K.listedSource)
             it.remove(K.inventory); it.remove(K.inventoryAttemptMs); it.remove(K.inventoryError)
         }
     }

@@ -31,7 +31,10 @@ import java.util.Base64
 
 class FakeReader : LocalFileReader {
     val files = mutableMapOf<String, ByteArray>()
+    /** Every file opened, in order: tests prove what was (not) read. */
+    val opens: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf<String>())
     override fun open(uri: String): InputStream {
+        opens += uri
         val b = files[uri] ?: throw java.io.FileNotFoundException(uri)
         return ByteArrayInputStream(b)
     }
@@ -85,7 +88,7 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
         listFailure?.let { throw it }
         // Like S3: everything under photos/, recognised photo keys or not.
         return PagedListing(
-            objects.filterKeys { it.startsWith(keys.photosPrefix) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), uploadTimes[k] ?: 1_000L, o.storageClass) },
+            objects.filterKeys { it.startsWith(keys.photosPrefix) }.map { (k, o) -> RemoteListing(k, o.bytes.size.toLong(), uploadTimes[k] ?: 1_000L, o.storageClass, o.etag) },
             requests = 1,
         )
     }
@@ -112,10 +115,13 @@ class FakeRemote(val keys: RemoteKeys) : RemoteStorage {
     /** User metadata returned by head() per key (for example captured-at-ms). */
     val metadata = mutableMapOf<String, Map<String, String>>()
     var headCalls = 0
+    /** Runs inside every head(): a test can hold a request (to cancel it) or slow it. */
+    var headGate: (suspend () -> Unit)? = null
 
     override suspend fun head(key: String): RemoteObjectMetadata? {
         require(keys.isWithinPrefix(key))
         headCalls++
+        headGate?.invoke()
         headFailures.removeFirstOrNull()?.let { throw it }
         val o = objects[key] ?: return null
         return RemoteObjectMetadata(key, o.bytes.size.toLong(), 1_000L, o.etag, headChecksumOverride ?: o.sha256B64, "image/jpeg", metadata[key] ?: emptyMap())
@@ -199,6 +205,26 @@ class FakeScheduler : WorkScheduler {
     var datesCancels = 0
     override fun kickCloudDates(wifiOnly: Boolean) { datesKicks++ }
     override fun cancelCloudDates() { datesCancels++ }
+    val semanticKicks = mutableListOf<Boolean>()
+    var semanticCancels = 0
+    var semanticSchedule: Boolean? = null
+    var modelKicks = 0
+    var modelCancels = 0
+    override fun kickSemanticIndex(onlyCharging: Boolean, continuation: Boolean) { semanticKicks += onlyCharging }
+    override fun cancelSemanticIndex() { semanticCancels++ }
+    override fun configureSemanticSchedule(enabled: Boolean, onlyCharging: Boolean) { semanticSchedule = enabled }
+    override fun kickModelDownload(wifiOnly: Boolean) { modelKicks++ }
+    override fun cancelModelDownload() { modelCancels++ }
+    var duplicateKicks = 0
+    var duplicateCancels = 0
+    override fun kickDuplicateScan(continuation: Boolean) { duplicateKicks++ }
+    override fun cancelDuplicateScan() { duplicateCancels++ }
+    var auditKicks = mutableListOf<Boolean>()
+    var auditCancels = 0
+    var auditDays: Int? = null
+    override fun kickAudit(deep: Boolean, wifiOnly: Boolean, reuseListing: Boolean) { auditKicks += deep }
+    override fun cancelAudit() { auditCancels++ }
+    override fun configureAuditSchedule(days: Int, wifiOnly: Boolean) { auditDays = days }
 }
 
 class FakeSink : RestoreSink {
@@ -225,7 +251,7 @@ class TestEnv(val prefix: String = "mi/prefijo/") {
     val creds = FakeCredentials()
     val progress = TransferProgress()
     val events = EventLog(db)
-    val catalog = RemoteCatalog(db)
+    var catalog = RemoteCatalog(db)
     var now = 1_000_000L
     private var idCounter = 0
     val indexer = MediaIndexer(db, idGenerator = { "%032x".format(++idCounter) })

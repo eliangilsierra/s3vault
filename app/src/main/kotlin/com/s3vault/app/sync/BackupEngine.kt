@@ -63,9 +63,11 @@ class BackupEngine(
 ) {
     private val media get() = db.media()
 
-    suspend fun run(maxConcurrency: Int): RunOutcome {
+    /** [onProgress] is told how far the run is after every batch (the sync center shows it); it never affects the outcome. */
+    suspend fun run(maxConcurrency: Int, onProgress: suspend (RunProgress) -> Unit = {}): RunOutcome {
         media.recoverInterrupted()
-        if (media.queuedCount() == 0) return RunOutcome.Completed(0, 0, 0)
+        val total = media.queuedCount()
+        if (total == 0) return RunOutcome.Completed(0, 0, 0)
 
         val ctx = remote.get() ?: return RunOutcome.NotConfigured
         try {
@@ -81,6 +83,7 @@ class BackupEngine(
             classifyRunLevel(e)?.let { return it }
         }
 
+        onProgress(RunProgress(total, 0, 0, 0)) // the run really starts here: credentials and the listing are settled
         var uploaded = 0
         var skipped = 0
         var failed = 0
@@ -105,6 +108,7 @@ class BackupEngine(
                     is ItemResult.Blocked -> stop = stop ?: RunOutcome.Blocked(r.kind)
                 }
             }
+            onProgress(RunProgress(total, verified = uploaded + skipped, failed = failed, deferred = deferred.size))
             if (stop != null) return stop
         }
         return retryReason?.let { RunOutcome.RetryLater(uploaded, it) } ?: RunOutcome.Completed(uploaded, skipped, failed)
@@ -178,7 +182,7 @@ class BackupEngine(
             val meta = headOrNull(ctx, existingKey)
             if (meta != null && verify(meta, size, hash, requireChecksum = false)) {
                 toVerifying(id)
-                finishBackup(ctx, item, existingKey, versionId, size)
+                finishBackup(ctx, item, existingKey, versionId, size, meta.etag)
                 uploadPreview(ctx, item, versionId)
                 return ItemResult.AlreadyBackedUp
             }
@@ -206,7 +210,7 @@ class BackupEngine(
         toVerifying(id)
         val meta = ctx.storage.head(key) ?: throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "object missing after upload")
         if (!verify(meta, size, hash, requireChecksum = true)) throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "size/checksum")
-        finishBackup(ctx, item, key, versionId, size)
+        finishBackup(ctx, item, key, versionId, size, meta.etag)
         uploadPreview(ctx, item, versionId)
         return ItemResult.Uploaded
     }
@@ -294,11 +298,11 @@ class BackupEngine(
         media.transition(id, SyncState.UPLOADING, SyncState.VERIFYING, null, false, nowMs())
     }
 
-    private suspend fun finishBackup(ctx: RemoteContext, item: MediaItemEntity, key: String, versionId: String, size: Long) {
+    private suspend fun finishBackup(ctx: RemoteContext, item: MediaItemEntity, key: String, versionId: String, size: Long, etag: String?) {
         SyncStateMachine.require(SyncState.VERIFYING, SyncState.BACKED_UP)
         val now = nowMs()
         // Signature of the bytes that were actually backed up = the current (size, mtime) at hash time.
-        val ok = media.markBackedUp(item.mediaStoreId, key, versionId, now, item.sizeBytes.takeIf { it > 0 } ?: size, item.dateModifiedSec)
+        val ok = media.markBackedUp(item.mediaStoreId, key, versionId, now, item.sizeBytes.takeIf { it > 0 } ?: size, item.dateModifiedSec, etag?.trim('"'))
         if (ok > 0) {
             // The S3 library shows the new object at once, with the capture date of the file, without listing the bucket again.
             catalog.recordUpload(ctx, key, size, item)
