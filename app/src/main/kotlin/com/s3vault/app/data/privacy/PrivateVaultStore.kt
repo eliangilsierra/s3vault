@@ -209,6 +209,8 @@ class PrivateVaultStore(
         } catch (e: java.io.IOException) {
             SafeLog.e("PrivateVaultStore", "Could not seal a picture", e)
             AddResult.Failed("No se pudo escribir el archivo cifrado (¿falta espacio?).")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // the caller (the mover) stops; the temporary files are removed in finally
         } catch (e: Exception) {
             SafeLog.e("PrivateVaultStore", "Unexpected failure sealing a picture", e)
             AddResult.Failed("Error inesperado al cifrar la foto.")

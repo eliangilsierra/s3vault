@@ -102,6 +102,8 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
                 // The previous complete inventory stays; only the failure is remembered.
                 c.settings.saveInventoryFailure(System.currentTimeMillis(), e.message ?: e.kind.userMessage)
                 error.update { (e.message ?: e.kind.userMessage) to e.needsCredentials }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 SafeLog.e("StorageCostViewModel", "Inventory refresh failed unexpectedly", e)
                 error.value = RemoteErrorKind.UNKNOWN.userMessage to false

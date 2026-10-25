@@ -193,6 +193,8 @@ class RemoteViewModel(private val c: AppContainer) : ViewModel() {
                 if (!c.remoteLibrary.refresh()) transient.update { it.copy(error = "Amazon S3 no está configurado.") }
             } catch (e: RemoteException) {
                 transient.update { it.copy(error = e.message, needsCredentials = e.needsCredentials) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 transient.update { it.copy(error = RemoteErrorKind.UNKNOWN.userMessage) }
             } finally {

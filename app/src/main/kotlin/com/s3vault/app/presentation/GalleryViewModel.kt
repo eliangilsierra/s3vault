@@ -155,6 +155,8 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
             try {
                 c.library.refresh(force)
                 error.value = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e // leaving the screen is not a failure to read the library
             } catch (e: Exception) {
                 error.value = "No se pudo leer la galería: " + Redactor.describe(e)
             } finally {

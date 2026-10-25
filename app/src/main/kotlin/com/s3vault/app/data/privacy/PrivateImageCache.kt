@@ -50,7 +50,7 @@ class PrivateImageCache(private val store: PrivateVaultStore) {
         fulls.get(item.id)?.let { return it }
         val gen = generation.get()
         val bmp = withContext(Dispatchers.IO) {
-            val bytes = try { store.imageBytes(item) } catch (e: Exception) { return@withContext null }
+            val bytes = try { store.imageBytes(item) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { return@withContext null }
             try { decode(bytes, maxEdgePx) } catch (e: OutOfMemoryError) { null }
         } ?: return null
         if (gen == generation.get()) fulls.put(item.id, bmp)
