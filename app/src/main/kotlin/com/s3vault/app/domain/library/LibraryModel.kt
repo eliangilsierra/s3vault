@@ -38,9 +38,11 @@ data class LibraryFilters(
     val folders: Set<String> = emptySet(),
     /** Local gallery only: photos whose date is the file date because no capture date exists. */
     val undatedOnly: Boolean = false,
+    /** At least this many bytes. Set by the smart albums ("large files"); not offered in the filter sheet. */
+    val minSizeBytes: Long? = null,
 ) {
     val activeCount: Int
-        get() = listOf(dateRange != null, kinds.isNotEmpty(), backup.isNotEmpty(), availability != null, folders.isNotEmpty(), undatedOnly).count { it }
+        get() = listOf(dateRange != null, kinds.isNotEmpty(), backup.isNotEmpty(), availability != null, folders.isNotEmpty(), undatedOnly, minSizeBytes != null).count { it }
 
     val isEmpty: Boolean get() = activeCount == 0
 }

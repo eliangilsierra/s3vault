@@ -43,6 +43,7 @@ class MediaIndexer(
                         mimeType = s.mimeType, sizeBytes = s.sizeBytes, dateModifiedSec = s.dateModifiedSec,
                         dateTakenMs = s.dateTakenMs, width = s.width, height = s.height, folderName = s.folderName,
                         assetId = idGenerator(), dayKey = s.dayKey, dateSource = s.dateSource,
+                        isFavorite = s.isFavorite, dateAddedSec = s.dateAddedSec,
                     )
                 } else if (differs(old, s)) {
                     changed += s
@@ -60,6 +61,7 @@ class MediaIndexer(
                         uri = s.uri, displayName = s.displayName, mimeType = s.mimeType, sizeBytes = s.sizeBytes,
                         dateModifiedSec = s.dateModifiedSec, dateTakenMs = s.dateTakenMs, width = s.width,
                         height = s.height, folderName = s.folderName, present = true, dayKey = s.dayKey, dateSource = s.dateSource,
+                        isFavorite = s.isFavorite, dateAddedSec = s.dateAddedSec,
                     )
                     // File reappeared after being REMOTE_ONLY.
                     if (old.syncState == SyncState.REMOTE_ONLY) {
@@ -107,7 +109,8 @@ class MediaIndexer(
         old.uri != s.uri || old.displayName != s.displayName || old.mimeType != s.mimeType || old.sizeBytes != s.sizeBytes ||
             old.dateModifiedSec != s.dateModifiedSec || old.dateTakenMs != s.dateTakenMs || old.width != s.width ||
             old.height != s.height || old.folderName != s.folderName || !old.present || old.dayKey != s.dayKey ||
-            old.dateSource != s.dateSource || old.syncState == SyncState.REMOTE_ONLY ||
+            old.dateSource != s.dateSource || old.isFavorite != s.isFavorite || old.dateAddedSec != s.dateAddedSec ||
+            old.syncState == SyncState.REMOTE_ONLY ||
             (old.syncState == SyncState.BACKED_UP && old.backedUpSizeBytes != null &&
                 (old.backedUpSizeBytes != s.sizeBytes || old.backedUpDateModifiedSec != s.dateModifiedSec))
 

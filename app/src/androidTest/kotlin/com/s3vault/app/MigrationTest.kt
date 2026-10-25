@@ -9,6 +9,7 @@ import com.s3vault.app.domain.MediaKind
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.domain.library.DateKeys
 import com.s3vault.app.domain.library.DateSource
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -64,7 +65,7 @@ class MigrationTest {
             )
         }
         val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
         try {
             val row = db.media().get(7)
             assertNotNull("the row survived", row)
@@ -100,7 +101,7 @@ class MigrationTest {
             )
         }
         val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
         try {
             val media = db.media().get(7)!!
             assertEquals("the row survived", "a.jpg", media.displayName)
@@ -133,7 +134,7 @@ class MigrationTest {
             db.execSQL("INSERT INTO album_items (albumId, mediaStoreId, addedAtMs) VALUES (1, 7, 6)")
         }
         val db = Room.databaseBuilder(target, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
         try {
             assertEquals("the album survived", listOf("Amor"), db.albums().all().map { it.name })
             assertEquals(listOf(7L), db.albums().memberIds(1))
@@ -143,6 +144,83 @@ class MigrationTest {
             assertEquals(listOf("a".repeat(64)), db.albums().cloudMemberVersions(1))
             db.albums().delete(1)
             assertEquals("memberships go with their album", emptyList<String>(), db.albums().cloudMemberVersions(1))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun version4To5KeepsEverythingAndAddsTheJobSummaryTable() = runBlocking {
+        createDatabase(4) { db ->
+            db.execSQL("INSERT INTO albums (id, name, createdAtMs) VALUES (1, 'Amor', 5)")
+            db.execSQL(
+                "INSERT INTO media_items (mediaStoreId, uri, kind, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height, " +
+                    "folderName, assetId, present, syncState, remoteKey, remoteVersionId, lastErrorPermanent, attempts, thumbnailUploaded, backupExcluded, dayKey, dateSource) " +
+                    "VALUES (7, 'content://media/7', 'IMAGE', 'a.jpg', 'image/jpeg', 10, 1, 2, 3, 4, 'Camera', 'asset', 1, 'QUEUED', NULL, NULL, 0, 0, 0, 0, 0, 'CAPTURE')",
+            )
+        }
+        val db = Room.databaseBuilder(target, AppDatabase::class.java, name).addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
+        try {
+            assertEquals("the queued photo is still queued", SyncState.QUEUED, db.media().get(7)!!.syncState)
+            assertEquals(listOf("Amor"), db.albums().all().map { it.name })
+            assertEquals("a migrated database has no run summary yet", null, db.jobs().get("backup"))
+            db.jobs().upsert(com.s3vault.app.data.local.JobEntity("backup", com.s3vault.app.data.local.JobState.COMPLETED, startedAtMs = 1, updatedAtMs = 2))
+            assertEquals(com.s3vault.app.data.local.JobState.COMPLETED, db.jobs().get("backup")!!.state)
+        } finally {
+            db.close()
+        }
+    }
+
+    private val v5Media = "INSERT INTO media_items (mediaStoreId, uri, kind, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height, " +
+        "folderName, assetId, present, syncState, remoteKey, remoteVersionId, lastErrorPermanent, attempts, thumbnailUploaded, backupExcluded, dayKey, dateSource) " +
+        "VALUES (7, 'content://media/7', 'IMAGE', 'a.jpg', 'image/jpeg', 10, 1, 2, 3, 4, 'Camera', 'asset', 1, 'BACKED_UP', 'p/photos/asset/v/a.jpg', 'v', 0, 0, 0, 0, 0, 'CAPTURE')"
+
+    @Test fun version5ToCurrentKeepsTheRowsAndGivesEveryLaterFeatureItsDefaults() = runBlocking {
+        createDatabase(5) { db ->
+            db.execSQL("INSERT INTO albums (id, name, createdAtMs) VALUES (1, 'Amor', 5)")
+            db.execSQL(v5Media)
+            db.execSQL(
+                "INSERT INTO remote_objects (`key`, assetId, versionId, displayName, sizeBytes, lastModifiedMs, state, effectiveDateMs, dateSource, dayKey, uploadDayKey, metaChecked) " +
+                    "VALUES ('p/photos/asset/v/a.jpg', 'asset', 'v', 'a.jpg', 10, 5, 'REMOTE_ONLY', 5, 'FALLBACK', 0, 0, 0)",
+            )
+        }
+        val db = Room.databaseBuilder(target, AppDatabase::class.java, name).addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
+        try {
+            val m = db.media().get(7)!!
+            assertEquals("the backed-up photo is still backed up", SyncState.BACKED_UP, m.syncState)
+            assertEquals("p/photos/asset/v/a.jpg", m.remoteKey)
+            assertEquals(false, m.isFavorite); assertEquals(0L, m.dateAddedSec); assertEquals(null, m.remoteEtag)
+            assertEquals(listOf("Amor"), db.albums().all().map { it.name })
+            assertEquals(null, db.remote().getByKeys(listOf("p/photos/asset/v/a.jpg")).single().etag)
+            // Every table added after version 5 is there and usable.
+            assertEquals(0, db.privateVault().itemCount())
+            assertEquals(null, db.privateVault().vault())
+            assertEquals(emptyList<Any>(), db.smartAlbums().observeAll().first())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun version10To11AddsThePrivateTablesAndTouchesNothingElse() = runBlocking {
+        createDatabase(10) { db ->
+            db.execSQL(v5Media.replace("dateSource) VALUES", "dateSource, remoteEtag, isFavorite, dateAddedSec) VALUES").replace("'CAPTURE')", "'CAPTURE', 'etag1', 1, 99)"))
+            db.execSQL("INSERT INTO smart_albums (id, name, filterJson, createdAtMs) VALUES (1, 'Mis fotos', '{}', 3)")
+            db.execSQL("INSERT INTO semantic_embeddings (mediaStoreId, modelId, sizeBytes, dateModifiedSec, ok, scale, vector, indexedAtMs) VALUES (7, 'm', 10, 1, 1, 0.5, x'0102', 9)")
+        }
+        val db = Room.databaseBuilder(target, AppDatabase::class.java, name).addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
+        try {
+            val m = db.media().get(7)!!
+            assertEquals("etag1", m.remoteEtag); assertEquals(true, m.isFavorite); assertEquals(99L, m.dateAddedSec)
+            assertEquals(listOf("Mis fotos"), db.smartAlbums().observeAll().first().map { it.name })
+            assertEquals("the vectors survived", 1, db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM semantic_embeddings").use { it.moveToFirst(); it.getInt(0) })
+            val dao = db.privateVault()
+            assertEquals(null, dao.vault())
+            dao.insertVault(com.s3vault.app.data.local.PrivateVaultEntity(wrappedKey = byteArrayOf(1), wrapIv = byteArrayOf(2), keyCheck = byteArrayOf(3), createdAtMs = 1))
+            val album = dao.insertAlbum(com.s3vault.app.data.local.PrivateAlbumEntity(nameSealed = byteArrayOf(9), createdAtMs = 2))
+            dao.insertItem(com.s3vault.app.data.local.PrivateItemEntity(albumId = album, fileName = "f", sealedBytes = 5, addedAtMs = 3, metaSealed = byteArrayOf(7)))
+            assertEquals(1, dao.itemCount())
+            dao.deleteAlbum(album)
+            assertEquals("items go with their album", 0, dao.itemCount())
+            assertEquals("the photo index was never touched", 1, db.media().get(7)?.let { 1 } ?: 0)
         } finally {
             db.close()
         }
