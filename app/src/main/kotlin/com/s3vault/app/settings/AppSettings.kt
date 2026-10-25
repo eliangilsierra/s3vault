@@ -8,7 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.s3vault.app.domain.AuthMethod
 import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
@@ -62,7 +62,21 @@ data class ConnectionStatus(
     val lastMessage: String?,
 )
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+/**
+ * One DataStore per settings file, created on first use. It is the same file the `preferencesDataStore("settings")` delegate used
+ * (`files/datastore/settings.preferences_pb`), so existing installations keep their preferences. Keying by path, not by process,
+ * is what lets every test with its own temporary files directory get its own store instead of a stale one from an earlier test.
+ */
+private val settingsStores = HashMap<String, DataStore<Preferences>>()
+private val settingsScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+private val Context.dataStore: DataStore<Preferences>
+    get() {
+        val file = java.io.File(applicationContext.filesDir, "datastore/settings.preferences_pb")
+        return synchronized(settingsStores) {
+            settingsStores.getOrPut(file.path) { PreferenceDataStoreFactory.create(scope = settingsScope, produceFile = { file }) }
+        }
+    }
 
 /** Non-secret preferences. Credentials never pass through here. */
 class AppSettings(private val context: Context) {
