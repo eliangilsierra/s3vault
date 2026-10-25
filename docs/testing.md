@@ -4,10 +4,10 @@
 
 | Suite | Comando | Resultado |
 |---|---|---|
-| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **543 pruebas, 0 fallos** |
-| Instrumentadas (emulador Android 17 / API 37, x86_64) | `adb shell am instrument -w com.s3vault.app.test/androidx.test.runner.AndroidJUnitRunner` (ver nota) | **113 pruebas, 0 fallos (una sola ejecución)** |
-| Lint | `./gradlew lintDebug` | 0 errores, 55 avisos (versiones, `UseKtx`, 4 de `android.media.ExifInterface`; ninguno de seguridad) |
-| Build release con R8 | `./gradlew assembleRelease` | OK. **33,5 MiB** por defecto (solo arm64), 53,1 MiB con arm64 + armv7, 119 MiB con las cuatro ABI (ONNX Runtime pesa 19–33 MiB por ABI: ver [semantic-search.md](semantic-search.md#peso-del-apk)). Compilada para x86_64 y firmada con la clave de depuración, **arranca en el emulador, abre Álbumes privados y crea el vault con el PIN real** (sin fallos de R8) |
+| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **559 pruebas, 0 fallos** (dos pasadas seguidas; una pasada intermedia mostró el fallo intermitente de Windows descrito más abajo, que no se repitió) |
+| Instrumentadas (emulador Android 17 / API 37, x86_64) | `adb shell am instrument -w com.s3vault.app.test/com.s3vault.app.S3VaultTestRunner` (ver nota) | **131 pruebas, 0 fallos** (una sola ejecución completa) |
+| Lint | `./gradlew lintDebug` | 0 errores, 52 avisos (versiones, `UseKtx`, 4 de `android.media.ExifInterface`; ninguno de seguridad) |
+| Build release con R8 | `./gradlew assembleRelease` | OK. **33,6 MiB** por defecto (solo arm64), 53,1 MiB con arm64 + armv7, 119 MiB con las cuatro ABI (ONNX Runtime pesa 19–33 MiB por ABI: ver [semantic-search.md](semantic-search.md#peso-del-apk)). Compilada para x86_64 y firmada con la clave de depuración, **arranca en el emulador, abre Álbumes privados y crea el vault con el PIN real** (sin fallos de R8) |
 
 Nota sobre las instrumentadas: se lanzan con `am instrument` (no con la tarea `connected…` de Gradle, que desinstala la app y con ella el modelo de búsqueda copiado a mano al emulador). Dos suites **dependen del estado del dispositivo**: `SemanticModelDeviceTest` necesita el pack del modelo en el dispositivo (sin él se omite) y una biblioteca **sin cientos de fotos idénticas** (tres fotos iguales empatan en la similitud), y `SmartGalleryUiTest` ahora inserta sus propias fotos de relleno en el escenario que las necesita. Una ejecución anterior mostró un fallo suelto de `SmartAlbumsUiTest` (contador en vivo) que no se repitió en las ejecuciones siguientes ni al lanzarla sola; no se encontró la causa, así que se anota como **intermitente conocido**.
 
@@ -140,3 +140,26 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - **Precios reales de tu cuenta:** la estimación usa precios de lista; no se ha contrastado con una factura real de AWS ni con Cost Explorer.
 - Buckets con cientos de miles de objetos: el inventario hace una solicitud LIST por cada 1000 y se mantiene en memoria solo mientras se agrega; no se ha medido el tiempo con listados enormes.
 - Rendimiento del relleno de miniaturas con decenas de miles de fotos y con ahorro de batería (se hacen 300 por ejecución del *worker*).
+
+## Tutorial, ayuda y preparación para publicar
+
+| Área | Pruebas |
+|---|---|
+| Decisión de mostrar el tutorial (instalación nueva, interrumpida, terminada, existente) | `OnboardingTest` (10, lógica pura: política y lista de configuración), `OnboardingGateTest` (6, con el contenedor real: Room y ajustes reales; persistencia entre reinicios) |
+| Tutorial en la app real | `OnboardingUiTest` (10): primera apertura y **omitir sin bloquear la galería**, recorrer las seis páginas y no repetirse, **cerrar a la mitad y volver a verlo**, instalación existente no interrumpida, **reabrir desde Ayuda sin cambiar el estado guardado**, paso de S3 vacío, conexión correcta con **una sola solicitud de lectura**, **permiso denegado**, **bucket inexistente** y **sin red** (con un S3 simulado local; no se usa ningún bucket real) |
+| Permisos de fotos | `OnboardingRenderTest`: concedido, parcial y denegado (se renderizan los tres estados; **no** se puede revocar el permiso desde una prueba instrumentada sin matar la app) |
+| Accesibilidad, texto grande y tema oscuro | `OnboardingRenderTest` (tutorial completo con **texto al 200 %** y tema oscuro: botones visibles y con altura táctil ≥ 48 dp en cada página; contenido desplazable), `ThemeAuditTest` (pantallas principales en tema oscuro). Encontró un error real: los títulos eran negros sobre fondo oscuro |
+| Ayuda | `OnboardingUiTest` (apertura y cierre de temas, versión, enlace a incidencias) y `OnboardingRenderTest` (texto grande y tema oscuro) |
+| Aislamiento de las pruebas | `S3VaultTestRunner` registra el tutorial como visto antes de arrancar la app para que el resto de pruebas empiece en la galería |
+| Errores de conexión comprensibles | `BackupEngineTest` (mensaje de archivo demasiado grande), tutorial y ajustes (mensajes de bucket, permisos y red) |
+
+El tutorial está probado en **emulador** con Android 17; no se ha probado con lectores de pantalla (TalkBack), en una tableta ni en un teléfono real.
+
+Nota técnica: el almacén de ajustes ahora se crea **por archivo** (mismo archivo que antes, `files/datastore/settings.preferences_pb`), de modo que las instalaciones existentes conservan sus preferencias y cada prueba de Robolectric tiene el suyo. Antes era un singleton del proceso que compartían todas las pruebas y fallaba de forma intermitente en Windows («Unable to rename … settings.preferences_pb.tmp»). Tres ejecuciones seguidas de la suite unitaria completa pasaron sin ningún fallo.
+
+### Fallos intermitentes conocidos y arreglos de aislamiento de esta ronda
+
+- **DataStore en Robolectric sobre Windows.** Antes: un *singleton* de proceso compartido por todas las pruebas que fallaba casi en cada pasada con «Unable to rename … settings.preferences_pb.tmp». Se corrigió con un almacén por archivo (ver arriba). **Queda** un fallo mucho más raro del mismo tipo *dentro de una misma prueba* (el sistema de archivos de Windows no deja renombrar el temporal): apareció una vez en las pasadas de esta ronda (`CostPersistenceTest`) y no se repitió en dos pasadas posteriores. Es un fallo de entorno, no de la app.
+- **`IntegrityUiTest`**: dependía de que no hubiera un reescaneo de MediaStore pendiente de una clase anterior (que marcaba como ausentes las filas sembradas y desactivaba «Volver a subir»). La prueba ahora lo agota antes de sembrar; se comprobó en los dos órdenes que lo reproducían.
+- **`SmartGalleryUiTest` / `SmartAlbumsUiTest`**: arreglos de aislamiento de la ronda anterior (fotos de relleno propias; reinicio del filtro compartido).
+- **Disco del equipo lleno** durante una pasada: el *worker* de pruebas murió con «File too large». Tras liberar espacio, todo pasó. Si ocurre, no es un fallo del código.
