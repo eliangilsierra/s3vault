@@ -55,6 +55,7 @@ class AppViewModelFactory(private val container: AppContainer) : ViewModelProvid
         com.s3vault.app.presentation.privacy.PrivateHubViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateHubViewModel(container)
         com.s3vault.app.presentation.privacy.PrivateAlbumViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateAlbumViewModel(container)
         com.s3vault.app.presentation.privacy.PrivateMoveViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateMoveViewModel(container)
+        com.s3vault.app.presentation.onboarding.OnboardingViewModel::class.java -> com.s3vault.app.presentation.onboarding.OnboardingViewModel(container)
         RemoteViewModel::class.java -> RemoteViewModel(container)
         CloudViewerViewModel::class.java -> CloudViewerViewModel(container)
         S3SettingsViewModel::class.java -> S3SettingsViewModel(container)

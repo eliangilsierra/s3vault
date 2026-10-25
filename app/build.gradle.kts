@@ -30,7 +30,7 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "0.4.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.s3vault.app.S3VaultTestRunner"
     }
 
     signingConfigs {

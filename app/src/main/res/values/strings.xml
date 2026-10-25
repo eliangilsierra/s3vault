@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">S3 Vault</string>
+
+    <!-- ===================== Onboarding: common ===================== -->
+    <string name="onb_skip">Saltar</string>
+    <string name="onb_back">Atrás</string>
+    <string name="onb_next">Siguiente</string>
+    <string name="onb_start">Empezar</string>
+    <string name="onb_finish">Ir a la galería</string>
+    <string name="onb_close_replay">Cerrar el tutorial</string>
+    <string name="onb_step_of">Paso %1$d de %2$d</string>
+
+    <!-- Welcome -->
+    <string name="onb_welcome_title">Tus fotos, bajo tu control</string>
+    <string name="onb_welcome_body">S3 Vault es una galería para tu móvil. Además, puede guardar copias de seguridad de tus fotos y vídeos en un bucket privado de Amazon S3 que configuras tú.</string>
+    <string name="onb_welcome_b1">Explora y organiza las fotos de tu dispositivo, sin crear ninguna cuenta.</string>
+    <string name="onb_welcome_b2">Si quieres, respalda las que elijas en tu propio almacenamiento de AWS.</string>
+    <string name="onb_welcome_b3">No hay servidores del desarrollador: tus fotos y credenciales solo viajan de tu móvil a tu bucket.</string>
+    <string name="onb_welcome_note_title">Galería y nube son cosas distintas</string>
+    <string name="onb_welcome_note">Aquí ves lo que hay en este dispositivo. Una foto tiene copia en la nube solo después de que la respaldes: al empezar no se sube nada.</string>
+
+    <!-- Features -->
+    <string name="onb_features_title">Qué puedes hacer</string>
+    <string name="onb_features_intro">Esto es lo que ofrece la app hoy:</string>
+    <string name="onb_f_gallery_title">Galería del dispositivo</string>
+    <string name="onb_f_gallery_body">Explora, abre con zoom, busca por nombre o fecha, filtra y agrupa por día, mes o año, y crea álbumes dentro de la app.</string>
+    <string name="onb_f_backup_title">Copias en Amazon S3</string>
+    <string name="onb_f_backup_body">Elige fotos y toca «Respaldar en S3», o activa el respaldo automático en Ajustes. Cada archivo subido se verifica.</string>
+    <string name="onb_f_status_title">Estado de las copias</string>
+    <string name="onb_f_status_body">La pestaña Respaldo muestra qué está pendiente, en curso o con error, y por qué.</string>
+    <string name="onb_f_cloud_title">Tu bucket</string>
+    <string name="onb_f_cloud_body">La pestaña S3 muestra lo que ya está en la nube, con vistas previas, y permite restaurarlo. Borrar en S3 es opcional y exige un permiso que tú das.</string>
+    <string name="onb_f_tools_title">Herramientas</string>
+    <string name="onb_f_tools_body">Auditoría del respaldo, liberar espacio verificado, duplicados, álbumes privados cifrados y búsqueda por contenido opcional, desde el menú de la galería.</string>
+
+    <!-- Storage -->
+    <string name="onb_storage_title">Cómo se guardan tus fotos</string>
+    <string name="onb_storage_local_title">En tu dispositivo</string>
+    <string name="onb_storage_local_body">Tus fotos originales siguen en tu móvil, donde Android las guarda. La app las lee para mostrártelas.</string>
+    <string name="onb_storage_cloud_title">En tu bucket de S3</string>
+    <string name="onb_storage_cloud_body">Las copias viven en el bucket que configuras. Una foto del móvil no tiene copia en la nube hasta que la respaldas: la app te indica cuáles sí.</string>
+    <string name="onb_storage_delete_title">Borrar en un sitio no borra en el otro</string>
+    <string name="onb_storage_delete_body">«Eliminar del dispositivo» no toca S3 y «Eliminar de S3» no toca el móvil. Nunca se borran las dos copias de un solo paso, y siempre pide confirmación.</string>
+    <string name="onb_storage_cost_title">Costes de AWS</string>
+    <string name="onb_storage_cost_body">Amazon S3 se cobra a tu cuenta de AWS, no a la app. Depende de lo que almacenes, de las solicitudes y de las descargas. En Ajustes verás una estimación orientativa, no tu factura.</string>
+    <string name="onb_storage_perm_title">Permisos de AWS</string>
+    <string name="onb_storage_perm_body">Para respaldar hacen falta permisos de listar, escribir y leer en tu bucket. Eliminar en S3 solo funciona si concedes ese permiso a propósito.</string>
+    <string name="onb_storage_adv_toggle">Detalles para usuarios avanzados</string>
+    <string name="onb_storage_adv_body">Las credenciales temporales de AWS (las recomendadas) caducan y la app no las renueva sola: al caducar hay que añadir unas nuevas. También puedes usar claves de un usuario IAM exclusivo para esta app. Se guardan cifradas con una clave del Android Keystore. Conviene limitar la política IAM al bucket y al prefijo que uses.</string>
+    <string name="onb_storage_link_pricing">Ver precios de Amazon S3</string>
+    <string name="onb_storage_link_iam">Política IAM recomendada</string>
+
+    <!-- Photo access -->
+    <string name="onb_photos_title">Acceso a tus fotos</string>
+    <string name="onb_photos_body">Android pide un permiso para que la galería pueda mostrar las fotos y vídeos de tu dispositivo. Se leen solo en el móvil: no se envía nada a ningún sitio hasta que configures S3 y elijas respaldar.</string>
+    <string name="onb_photos_granted_title">Acceso concedido</string>
+    <string name="onb_photos_granted">Ya puedes ver las fotos de tu dispositivo en la galería.</string>
+    <string name="onb_photos_partial_title">Acceso parcial</string>
+    <string name="onb_photos_partial">La app solo ve las fotos que elegiste. Puedes cambiarlo cuando quieras.</string>
+    <string name="onb_photos_denied_title">Sin acceso por ahora</string>
+    <string name="onb_photos_denied">Puedes seguir con el tutorial y dar el permiso después. Hasta entonces la galería estará vacía.</string>
+    <string name="onb_photos_allow">Permitir acceso a mis fotos</string>
+    <string name="onb_photos_manage">Cambiar las fotos permitidas</string>
+    <string name="onb_photos_settings">Abrir los ajustes de la app</string>
+
+    <!-- Connect to S3 -->
+    <string name="onb_s3_title">Conectar con Amazon S3</string>
+    <string name="onb_s3_optional">Es opcional: la galería funciona sin esto y puedes hacerlo más tarde desde Ajustes.</string>
+    <string name="onb_s3_step_config">Región, bucket y prefijo</string>
+    <string name="onb_s3_step_creds">Credenciales</string>
+    <string name="onb_s3_step_test">Probar la conexión</string>
+    <string name="onb_s3_state_done">Hecho</string>
+    <string name="onb_s3_state_todo">Pendiente</string>
+    <string name="onb_s3_state_attention">Hay que revisarlo</string>
+    <string name="onb_s3_state_blocked">Completa antes los pasos anteriores</string>
+    <string name="onb_s3_btn_config">Configurar</string>
+    <string name="onb_s3_btn_config_edit">Cambiar</string>
+    <string name="onb_s3_btn_creds">Añadir credenciales</string>
+    <string name="onb_s3_btn_creds_edit">Revisar credenciales</string>
+    <string name="onb_s3_btn_test">Probar ahora</string>
+    <string name="onb_s3_error_title">No se pudo conectar</string>
+    <string name="onb_s3_testing">Comprobando la conexión…</string>
+    <string name="onb_s3_test_note">La prueba solo pide a S3 un elemento de la lista del bucket: no sube ni borra nada.</string>
+    <string name="onb_s3_help_title">¿Aún no tienes bucket o credenciales?</string>
+    <string name="onb_s3_help_body">Necesitas una cuenta de AWS, un bucket privado de S3 y credenciales con permiso para listar, escribir y leer en él. Puedes seguir el tutorial y hacerlo después.</string>
+    <string name="onb_s3_link_bucket">Cómo crear un bucket (AWS)</string>
+    <string name="onb_s3_link_iam">Crear un usuario IAM (AWS)</string>
+
+    <!-- First backup -->
+    <string name="onb_backup_title">Tu primera copia de seguridad</string>
+    <string name="onb_backup_s1">Abre la galería y mantén pulsada una foto para empezar a seleccionar.</string>
+    <string name="onb_backup_s2">Toca «Respaldar en S3» (la nube con una flecha) en la barra superior.</string>
+    <string name="onb_backup_s3">Sigue el avance en la pestaña Respaldo. Una foto solo se marca como respaldada cuando S3 confirma que la copia es idéntica.</string>
+    <string name="onb_backup_s4">Opcional: en Ajustes → Ajustes generales puedes activar el respaldo automático.</string>
+    <string name="onb_backup_connected_title">S3 está listo</string>
+    <string name="onb_backup_connected">La conexión está verificada. Ya puedes respaldar.</string>
+    <string name="onb_backup_not_connected_title">S3 todavía no está conectado</string>
+    <string name="onb_backup_not_connected">Puedes explorar tu galería ahora y respaldar cuando lo configures.</string>
+    <string name="onb_backup_replay_hint">Podrás repetir este tutorial desde Ajustes → Ayuda y tutorial.</string>
+
+    <!-- ===================== Help ===================== -->
+    <string name="help_title">Ayuda y tutorial</string>
+    <string name="help_subtitle">Cómo funciona S3 Vault</string>
+    <string name="help_topics_title">Temas</string>
+    <string name="help_replay_title">Ver el tutorial otra vez</string>
+    <string name="help_replay_subtitle">Qué es la app, cómo se guardan las fotos y cómo conectar S3</string>
+    <string name="help_state_expanded">Expandido</string>
+    <string name="help_state_collapsed">Contraído</string>
+    <string name="settings_help_subtitle">Cómo funciona la app, configurar S3 y solución de problemas</string>
+    <string name="help_expand">Mostrar</string>
+    <string name="help_collapse">Ocultar</string>
+
+    <string name="help_what_title">¿Qué es S3 Vault?</string>
+    <string name="help_what_body">Una galería de fotos para Android que muestra las fotos y vídeos de tu móvil y puede guardar copias de seguridad en un bucket privado de Amazon S3 que configuras tú. No hay cuenta ni servidor del desarrollador: la app solo habla con tu bucket.</string>
+
+    <string name="help_features_title">Qué puedes hacer</string>
+    <string name="help_features_body">• Galería del dispositivo: buscar por nombre o fecha, filtrar, agrupar por día, mes o año, álbumes y álbumes inteligentes.\n• Respaldar fotos y vídeos en tu bucket, a mano o de forma automática.\n• Ver el estado de cada copia en la pestaña Respaldo.\n• Explorar tu bucket en la pestaña S3 y restaurar fotos.\n• Herramientas (menú de la galería): auditoría del respaldo, liberar espacio verificado, duplicados, álbumes privados cifrados y búsqueda por contenido opcional.</string>
+
+    <string name="help_setup_title">Configurar Amazon S3</string>
+    <string name="help_setup_body">1. Ten una cuenta de AWS y crea un bucket privado (deja activado el bloqueo de acceso público).\n2. Crea una identidad IAM con permisos de listar, escribir y leer solo en tu bucket y prefijo.\n3. En Ajustes → Amazon S3, indica región, bucket y prefijo.\n4. En Ajustes → Seguridad y credenciales, guarda las credenciales.\n5. Pulsa «Probar conexión» y «Probar permisos». Ninguna de las dos borra nada.\n\nLa política IAM recomendada está en la documentación del proyecto.</string>
+
+    <string name="help_backup_title">Hacer y comprobar una copia</string>
+    <string name="help_backup_body">Mantén pulsada una foto, selecciona las que quieras y toca «Respaldar en S3». También puedes activar el respaldo automático en Ajustes → Ajustes generales.\n\nLa pestaña Respaldo muestra lo que está en cola, subiendo, respaldado o con error. Una foto solo cuenta como respaldada cuando S3 confirma que la copia es idéntica. La herramienta «Auditoría del respaldo» (menú de la galería) puede comprobar más tarde que sigue estando en S3; solo lee, nunca modifica.</string>
+
+    <string name="help_restore_title">Restaurar fotos</string>
+    <string name="help_restore_body">En la pestaña S3, abre una foto o selecciona varias y elige «Restaurar en este dispositivo». Se guardan como copias nuevas en Imágenes/S3Vault y nunca sobrescriben nada.</string>
+
+    <string name="help_delete_title">Eliminar del dispositivo o de S3</string>
+    <string name="help_delete_body">Son dos acciones distintas y nunca se hacen juntas. «Eliminar del dispositivo» quita la foto del móvil (Android te pide confirmación) y no toca S3. «Eliminar de S3» quita la copia de la nube y no toca el móvil; solo funciona si has dado ese permiso en AWS. Si una foto no tiene copia en S3 y la eliminas del móvil, se pierde.</string>
+
+    <string name="help_creds_title">Credenciales</string>
+    <string name="help_creds_body">Hay dos opciones:\n• Credenciales temporales de AWS (recomendado): caducan. La app avisa antes de que caduquen y, si caducan, conserva la cola de respaldo, pero no puede renovarlas: tienes que añadir unas nuevas.\n• Access key y secret estáticas de un usuario IAM exclusivo para esta app (avanzado).\n\nSe guardan cifradas con una clave del Android Keystore y no se envían a nadie: la app firma las solicitudes a AWS en tu móvil. Puedes borrarlas en Ajustes → Seguridad y credenciales.</string>
+
+    <string name="help_cost_title">Costes de AWS</string>
+    <string name="help_cost_body">Amazon S3 se cobra directamente a tu cuenta de AWS. El coste depende de lo que almacenes, del número de solicitudes, de las descargas (por ejemplo al restaurar) y de otros factores. En Ajustes → Almacenamiento y costes hay una estimación orientativa basada en los precios de lista; no es tu factura. Algunas herramientas (como la auditoría) avisan de cuántas solicitudes harán antes de empezar.</string>
+
+    <string name="help_private_title">Álbumes privados</string>
+    <string name="help_private_body">Copias cifradas de fotos que se abren con tu huella, PIN o patrón. Se crean desde la galería («Mover a álbum privado»). Tus originales no se tocan hasta que tú lo confirmas, y las fotos privadas no se respaldan en S3. Si quitas el bloqueo de pantalla, restableces el móvil o borras los datos de la app, las fotos cifradas se pierden y no se pueden recuperar.</string>
+
+    <string name="help_trouble_title">Solución de problemas</string>
+    <string name="help_trouble_body">• No veo mis fotos: concede el permiso de fotos (Ajustes de Android → Aplicaciones → S3 Vault → Permisos). Si diste acceso parcial, solo se ven las fotos elegidas.\n• «Credenciales caducadas»: añade credenciales nuevas en Ajustes → Seguridad y credenciales. La cola de respaldo se conserva.\n• «La región no coincide»: la región debe ser la del bucket. «Probar conexión» muestra la correcta.\n• «Permisos insuficientes»: revisa la política IAM; hacen falta listar, escribir y leer en el bucket y el prefijo.\n• «El bucket no existe»: revisa el nombre (sin espacios, en minúsculas).\n• Errores de red: la cola se conserva y se reintenta sola cuando vuelve la conexión.</string>
+
+    <string name="help_about_title">Acerca de</string>
+    <string name="help_about_version">Versión %1$s</string>
+    <string name="help_about_issues">Informar de un problema</string>
+    <string name="help_about_issues_sub">Se abre la página de incidencias del proyecto en GitHub</string>
+    <string name="help_about_privacy">Sin cuentas ni telemetría. La app solo habla con tu propio bucket de Amazon S3; la única otra conexión es la descarga opcional del modelo de búsqueda por contenido, y solo si la activas.</string>
+    <string name="help_link_iam_doc">Política IAM recomendada</string>
+    <string name="help_link_aws_bucket">Cómo crear un bucket (AWS)</string>
+    <string name="help_link_aws_iam">Crear un usuario IAM (AWS)</string>
+    <string name="help_link_aws_pricing">Precios de Amazon S3 (AWS)</string>
+</resources>

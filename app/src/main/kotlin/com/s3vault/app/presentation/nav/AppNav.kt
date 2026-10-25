@@ -57,6 +57,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.s3vault.app.AppContainer
+import com.s3vault.app.BuildConfig
+import com.s3vault.app.presentation.help.HelpScreen
+import com.s3vault.app.presentation.onboarding.OnboardingScreen
+import com.s3vault.app.presentation.onboarding.OnboardingViewModel
+import com.s3vault.app.presentation.onboarding.shouldShowOnboarding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import com.s3vault.app.domain.MediaItem
 import com.s3vault.app.presentation.AlbumsViewModel
 import com.s3vault.app.presentation.AppViewModelFactory
@@ -127,12 +134,28 @@ private val LibraryTools = listOf(
     Tool("space", "Liberar espacio", "Quita del móvil lo que S3 ya tiene verificado. Nunca toca S3", Icons.Filled.CleaningServices, "Este dispositivo"),
 )
 
+private const val ONBOARDING = "onboarding?replay={replay}"
 private const val VIEWER = "viewer/{source}/{id}"
 private const val ALBUM = "album/{id}"
 private const val CLOUD = "cloud/{key}?album={album}"
 
+/**
+ * Decides whether this launch opens the first-run tour (a new installation) or the gallery, then builds the navigation with that
+ * start. A blank window-coloured frame shows for the few milliseconds the decision takes.
+ */
 @Composable
 fun AppRoot(container: AppContainer) {
+    val showTour by androidx.compose.runtime.produceState<Boolean?>(null) { value = shouldShowOnboarding(container) }
+    val decided = showTour
+    if (decided == null) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
+    AppRootContent(container, startOnboarding = decided)
+}
+
+@Composable
+private fun AppRootContent(container: AppContainer, startOnboarding: Boolean) {
     val nav = rememberNavController()
     val factory = AppViewModelFactory(container)
     val entry by nav.currentBackStackEntryAsState()
@@ -205,9 +228,23 @@ fun AppRoot(container: AppContainer) {
         },
     ) { padding ->
         NavHost(
-            nav, startDestination = Tab.Gallery.route, modifier = Modifier.padding(padding).consumeWindowInsets(padding),
+            nav, startDestination = if (startOnboarding) ONBOARDING else Tab.Gallery.route, modifier = Modifier.padding(padding).consumeWindowInsets(padding),
             enterTransition = enter, exitTransition = exit, popEnterTransition = popEnter, popExitTransition = popExit,
         ) {
+            composable(ONBOARDING, listOf(navArgument("replay") { type = NavType.BoolType; defaultValue = false })) { e ->
+                val vm: OnboardingViewModel = viewModel(factory = factory)
+                val replay = e.arguments?.getBoolean("replay") ?: false
+                OnboardingScreen(
+                    vm, replay,
+                    onOpenS3Settings = { nav.navigate("settings/s3") },
+                    onOpenCredentials = { nav.navigate("settings/security") },
+                    // The first-run tour ends in the gallery; a replay goes back to Help.
+                    onFinished = { if (replay) nav.popBackStack() else nav.navigate(Tab.Gallery.route) { popUpTo(ONBOARDING) { inclusive = true } } },
+                )
+            }
+            composable("help") {
+                HelpScreen(BuildConfig.VERSION_NAME, onBack = { nav.popBackStack() }, onReplayTour = { nav.navigate("onboarding?replay=true") })
+            }
             composable(Tab.Gallery.route) {
                 val vm: GalleryViewModel = viewModel(factory = factory)
                 val deleteVm: DeleteViewModel = viewModel(factory = factory)
@@ -362,6 +399,7 @@ fun AppRoot(container: AppContainer) {
                     onGeneral = { nav.navigate("settings/general") },
                     onCosts = { nav.navigate("settings/costs") },
                     onTools = { nav.navigate("tools") },
+                    onHelp = { nav.navigate("help") },
                     costSummary = cost.summaryLine(),
                 )
             }
@@ -443,7 +481,8 @@ fun AppRoot(container: AppContainer) {
 
 private fun NavHostController.navigateTab(route: String) {
     navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        // The gallery is the home of the tabs even when the app started on the first-run tour.
+        popUpTo(Tab.Gallery.route) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }

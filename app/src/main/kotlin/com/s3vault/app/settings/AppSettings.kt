@@ -106,6 +106,7 @@ class AppSettings(private val context: Context) {
         val listedSource = stringPreferencesKey("remote_listed_source")
         val auditIntervalDays = intPreferencesKey("audit_interval_days")
         val privateAutoLockMs = longPreferencesKey("private_auto_lock_ms")
+        val onboardingProgress = stringPreferencesKey("onboarding_progress")
         val semanticEnabled = booleanPreferencesKey("semantic_enabled")
         val semanticCharging = booleanPreferencesKey("semantic_only_charging")
         val modelWifiOnly = booleanPreferencesKey("model_wifi_only")
@@ -298,6 +299,13 @@ class AppSettings(private val context: Context) {
             it[K.connMessage] = message
         }
     }
+
+    /** Where the first-run tour stands. Absent (a new or upgraded installation that never saw it) reads as NOT_STARTED. */
+    val onboardingProgress: Flow<com.s3vault.app.domain.onboarding.OnboardingProgress> = store.data.map { p ->
+        p[K.onboardingProgress]?.let { runCatching { com.s3vault.app.domain.onboarding.OnboardingProgress.valueOf(it) }.getOrNull() }
+            ?: com.s3vault.app.domain.onboarding.OnboardingProgress.NOT_STARTED
+    }
+    suspend fun setOnboardingProgress(v: com.s3vault.app.domain.onboarding.OnboardingProgress) = store.edit { it[K.onboardingProgress] = v.name }.let { }
 
     suspend fun setAutoBackup(v: Boolean) = store.edit { it[K.autoBackup] = v }.let { }
     suspend fun setWifiOnly(v: Boolean) = store.edit { it[K.wifiOnly] = v }.let { }

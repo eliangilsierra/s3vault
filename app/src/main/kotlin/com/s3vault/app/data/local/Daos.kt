@@ -128,6 +128,10 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media_items WHERE syncState = 'QUEUED' AND present = 1")
     suspend fun queuedCount(): Int
 
+    /** True once the library was ever indexed (any row, present or not): tells an existing installation from a new one. */
+    @Query("SELECT EXISTS(SELECT 1 FROM media_items)")
+    suspend fun hasAnyRow(): Boolean
+
     @Query("SELECT * FROM media_items WHERE syncState = 'LOCAL_ONLY' AND present = 1 AND backupExcluded = 0 AND (:includeVideos = 1 OR kind = 'IMAGE')")
     suspend fun pendingLocalOnly(includeVideos: Boolean): List<MediaItemEntity>
 
