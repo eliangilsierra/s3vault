@@ -166,7 +166,7 @@ class AppContainer(private val context: Context) {
     val privateMover by lazy { com.s3vault.app.data.privacy.PrivateMover(privateVault, mediaSource, MediaStoreThumbnailMaker(context)) }
     val privateImages by lazy { com.s3vault.app.data.privacy.PrivateImageCache(privateVault).also { c -> privateSession.addLockListener { c.clear() } } }
 
-    val connectionTester = ConnectionTester(credentials)
+    val connectionTester = ConnectionTester(credentials) { endpointOverride }
 
     fun mediaAccess(): MediaAccess {
         fun granted(p: String) = ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
@@ -207,12 +207,12 @@ private class CachingRemoteProvider(
 }
 
 /** Runs connection/permission checks for a config that may not be saved yet. */
-class ConnectionTester(private val credentials: CredentialsRepository) {
+class ConnectionTester(private val credentials: CredentialsRepository, private val endpoint: () -> String? = { null }) {
     suspend fun checkConnection(config: S3Config) = withClient(config) { it.checkConnection() }
     suspend fun testPermissions(config: S3Config): PermissionReport = withClient(config) { it.testPermissions() }
 
     private suspend fun <T> withClient(config: S3Config, block: suspend (S3RemoteStorage) -> T): T {
-        val client = S3RemoteStorage(config, credentials)
+        val client = S3RemoteStorage(config, credentials, endpoint())
         try {
             return block(client)
         } finally {
