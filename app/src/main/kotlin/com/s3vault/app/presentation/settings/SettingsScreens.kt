@@ -22,6 +22,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -126,7 +127,7 @@ internal fun SettingsScaffold(
 // ------------------------------------------------------------------ Home
 
 @Composable
-fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?) {
+fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?, onTools: () -> Unit = {}) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar("Ajustes") },
@@ -156,6 +157,13 @@ fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit
                     icon = Icons.Filled.Savings, onClick = onCosts,
                 )
             }
+            SectionHeader("Biblioteca")
+            SettingsGroup {
+                SettingsRow(
+                    title = "Herramientas de la biblioteca", subtitle = "Sincronización, auditoría del respaldo y más",
+                    icon = Icons.Filled.Build, onClick = onTools,
+                )
+            }
             SectionHeader("Preferencias")
             SettingsGroup {
                 SettingsRow(
@@ -169,7 +177,7 @@ fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit
                 GroupDivider(Space.l)
                 SettingsRow(
                     title = "Sin cuentas ni telemetría",
-                    subtitle = "La app solo habla con tu propio bucket de Amazon S3. No hay servidores del desarrollador.",
+                    subtitle = "La app solo habla con tu propio bucket de Amazon S3. No hay servidores del desarrollador. La única otra conexión es la descarga opcional del modelo de búsqueda por contenido, y solo si la activas.",
                 )
             }
         }
