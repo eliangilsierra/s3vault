@@ -66,6 +66,9 @@ class IntegrityUiTest {
         // Only the first photo's object exists in the bucket (declared size is what the listing reports).
         s3.objects[keyFor(9101, "Playa.jpg")] = FakeS3Dispatcher.Obj(ByteArray(0), "", "image/jpeg", emptyMap(), "STANDARD", size)
         runBlocking(Dispatchers.IO) {
+            // Settle any rescan that an earlier test left pending (MediaStore changed): it would run when the gallery resumes and
+            // mark these seeded rows, which have no real MediaStore file, as absent, which disables "Volver a subir".
+            container.library.refresh(force = true)
             container.db.clearAllTables()
             container.settings.clearS3Config()
             container.credentials.saveStatic("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
@@ -135,6 +138,7 @@ class IntegrityUiTest {
         waitForText("Cena.jpg")
         compose.onNodeWithText("Cena.jpg").performClick() // selects the row
         compose.onNodeWithContentDescription("Volver a subir…").performClick()
+        waitForText("¿Volver a subir 1 foto?")
         compose.onNodeWithText("¿Volver a subir 1 foto?").assertIsDisplayed()
         compose.onNodeWithText("sobrescribe", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Cancelar").performClick()
