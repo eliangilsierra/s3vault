@@ -82,6 +82,7 @@ fun SmartAlbumDetailScreen(
             if (selecting) {
                 AppTopBar(
                     title = if (selected.size == 1) "1 seleccionada" else "${selected.size} seleccionadas",
+                    compact = true,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                     actions = {

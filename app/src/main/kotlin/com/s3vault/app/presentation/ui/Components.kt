@@ -137,15 +137,24 @@ fun AppTopBar(
     subtitle: String? = null,
     navigation: (@Composable () -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.background,
+    /** A smaller title for bars that carry many actions (selection mode), so a title like "3 seleccionadas" is not cut to "3". */
+    compact: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     TopAppBar(
         modifier = modifier,
         title = {
             Column {
-                Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, modifier = Modifier.semantics { heading() })
+                // One line, ellipsis at the end: a long title never wraps and loses its second line.
+                Text(
+                    title, style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                    maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() },
+                )
                 if (subtitle != null) {
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text(
+                        subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
                 }
             }
         },

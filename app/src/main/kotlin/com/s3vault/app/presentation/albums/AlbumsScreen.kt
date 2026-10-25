@@ -251,6 +251,7 @@ fun AlbumDetailScreen(
         topBar = {
             AppTopBar(
                 title = if (selecting) (if (selectedCount == 1) "1 seleccionada" else "$selectedCount seleccionadas") else name.orEmpty(),
+                compact = true,
                 containerColor = if (selecting) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.background,
                 navigation = {
                     if (selecting) IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") }

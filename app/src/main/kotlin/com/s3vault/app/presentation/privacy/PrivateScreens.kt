@@ -362,6 +362,7 @@ fun PrivateAlbumScreen(
         topBar = {
             if (selectionMode) AppTopBar(
                 title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
+                compact = true,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                 actions = {

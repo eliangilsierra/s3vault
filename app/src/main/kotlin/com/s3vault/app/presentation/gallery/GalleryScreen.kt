@@ -190,6 +190,7 @@ fun GalleryScreen(
                 when (mode) {
                     2 -> AppTopBar(
                         title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
+                        compact = true,
                         subtitle = when {
                             summary.inCloud == 0 -> "Solo en este dispositivo"
                             summary.inCloud == summary.total -> "Todas con copia en S3"
