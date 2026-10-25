@@ -7,11 +7,18 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Optional release signing. `keystore.properties` (git-ignored, repo root) holds storeFile, storePassword,
-// keyAlias and keyPassword; without it the release build stays unsigned.
+// Optional release signing. `keystore.properties` (git-ignored, repo root) holds storeFile, storePassword, keyAlias and
+// keyPassword; for CI the same four values can come from the environment instead (S3VAULT_STORE_FILE, S3VAULT_STORE_PASSWORD,
+// S3VAULT_KEY_ALIAS, S3VAULT_KEY_PASSWORD). Without either, the release build stays unsigned. No key or password is in the repository.
 val keystoreProps = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
 }
+fun signingValue(property: String, environment: String): String? = keystoreProps.getProperty(property) ?: System.getenv(environment)
+val signingStoreFile = signingValue("storeFile", "S3VAULT_STORE_FILE")
+val signingStorePassword = signingValue("storePassword", "S3VAULT_STORE_PASSWORD")
+val signingKeyAlias = signingValue("keyAlias", "S3VAULT_KEY_ALIAS")
+val signingKeyPassword = signingValue("keyPassword", "S3VAULT_KEY_PASSWORD")
+val hasReleaseSigning = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.s3vault.app"
@@ -23,16 +30,16 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "0.4.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.s3vault.app.S3VaultTestRunner"
     }
 
     signingConfigs {
-        if (keystoreProps.isNotEmpty()) {
+        if (hasReleaseSigning) {
             create("release") {
-                storeFile = file(keystoreProps.getProperty("storeFile"))
-                storePassword = keystoreProps.getProperty("storePassword")
-                keyAlias = keystoreProps.getProperty("keyAlias")
-                keyPassword = keystoreProps.getProperty("keyPassword")
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
             }
         }
     }

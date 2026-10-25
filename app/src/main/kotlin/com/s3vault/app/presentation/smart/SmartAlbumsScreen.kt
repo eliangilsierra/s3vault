@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Screenshot
@@ -90,7 +90,7 @@ fun SmartIcon.vector(): ImageVector = when (this) {
     SmartIcon.NOT_BACKED_UP -> Icons.Filled.CloudOff
     SmartIcon.RECOVERABLE -> Icons.Filled.CleaningServices
     SmartIcon.RESTORED -> Icons.Filled.Restore
-    SmartIcon.METADATA -> Icons.Filled.HelpOutline
+    SmartIcon.METADATA -> Icons.AutoMirrored.Filled.HelpOutline
     SmartIcon.YEAR -> Icons.Filled.CalendarMonth
     SmartIcon.CUSTOM -> Icons.Filled.AutoAwesome
 }

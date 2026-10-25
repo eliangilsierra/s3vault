@@ -202,6 +202,7 @@ fun RemoteScreen(
                 when (barMode) {
                     2 -> AppTopBar(
                         title = if (selected.size == 1) "1 seleccionada" else "${selected.size} seleccionadas",
+                        compact = true,
                         subtitle = if (alsoLocal == 0) "Solo existen en S3" else "$alsoLocal también en este dispositivo",
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },

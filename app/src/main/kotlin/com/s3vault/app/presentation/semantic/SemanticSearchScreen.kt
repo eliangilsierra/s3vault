@@ -127,8 +127,8 @@ private fun Setup(s: SemanticState, vm: SemanticSearchViewModel, onDelete: () ->
     when {
         !s.enabled -> Intro(s, vm)
         s.verifying -> StatusCard("Comprobando el modelo…", "Se verifica la huella de cada archivo antes de usarlo.") { SlimProgress(null) }
-        !s.ready && downloading -> StatusCard("Descargando el modelo", "${formatBytes((dl?.doneItems ?: 0) * 1024L)} de ${formatBytes(s.pack.totalBytes)}") {
-            SlimProgress(if ((dl?.totalItems ?: 0) > 0) dl!!.doneItems.toFloat() / dl.totalItems else null)
+        !s.ready && downloading -> StatusCard("Descargando el modelo", "${formatBytes(dl.doneItems * 1024L)} de ${formatBytes(s.pack.totalBytes)}") {
+            SlimProgress(if (dl.totalItems > 0) dl.doneItems.toFloat() / dl.totalItems else null)
             SecondaryButton("Cancelar descarga", vm::cancelDownload, Modifier.fillMaxWidth())
             Text("Si la cancelas o se corta la conexión, lo descargado se conserva y continúa desde ahí.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

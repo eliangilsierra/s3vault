@@ -76,6 +76,7 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
         val auth = v[4] as AuthStatus
         val changes = v[5] as PendingChanges
         val busy = v[6] as Boolean
+        @Suppress("UNCHECKED_CAST")
         val err = v[7] as Pair<String, Boolean>?
         val now = v[8] as Long
         val inv = stored?.takeIf { cfg != null && it.matches(cfg) }
@@ -102,6 +103,8 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
                 // The previous complete inventory stays; only the failure is remembered.
                 c.settings.saveInventoryFailure(System.currentTimeMillis(), e.message ?: e.kind.userMessage)
                 error.update { (e.message ?: e.kind.userMessage) to e.needsCredentials }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 SafeLog.e("StorageCostViewModel", "Inventory refresh failed unexpectedly", e)
                 error.value = RemoteErrorKind.UNKNOWN.userMessage to false
@@ -112,5 +115,4 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun dismissError() { error.value = null }
 }

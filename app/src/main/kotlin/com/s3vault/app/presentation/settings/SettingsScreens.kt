@@ -22,6 +22,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
@@ -127,7 +129,7 @@ internal fun SettingsScaffold(
 // ------------------------------------------------------------------ Home
 
 @Composable
-fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?, onTools: () -> Unit = {}) {
+fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?, onTools: () -> Unit = {}, onHelp: () -> Unit = {}) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar("Ajustes") },
@@ -169,6 +171,13 @@ fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit
                 SettingsRow(
                     title = "Ajustes generales", subtitle = "Tema, respaldo automático, Wi-Fi, vídeos y privacidad",
                     icon = Icons.Filled.Tune, onClick = onGeneral,
+                )
+            }
+            SectionHeader("Ayuda")
+            SettingsGroup {
+                SettingsRow(
+                    title = stringResource(com.s3vault.app.R.string.help_title), subtitle = stringResource(com.s3vault.app.R.string.settings_help_subtitle),
+                    icon = Icons.AutoMirrored.Filled.HelpOutline, onClick = onHelp,
                 )
             }
             SectionHeader("Acerca de")
@@ -221,7 +230,7 @@ fun S3SettingsScreen(vm: S3SettingsViewModel, onBack: () -> Unit, onSecurity: ()
                 shape = MaterialTheme.shapes.medium,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-                modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryEditable),
+                modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryEditable),
             )
             val matches = ConfigValidator.knownRegions.filter { it.contains(s.form.region) }
             if (matches.isNotEmpty()) {

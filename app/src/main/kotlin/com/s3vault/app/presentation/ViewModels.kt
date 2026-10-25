@@ -55,6 +55,7 @@ class AppViewModelFactory(private val container: AppContainer) : ViewModelProvid
         com.s3vault.app.presentation.privacy.PrivateHubViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateHubViewModel(container)
         com.s3vault.app.presentation.privacy.PrivateAlbumViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateAlbumViewModel(container)
         com.s3vault.app.presentation.privacy.PrivateMoveViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateMoveViewModel(container)
+        com.s3vault.app.presentation.onboarding.OnboardingViewModel::class.java -> com.s3vault.app.presentation.onboarding.OnboardingViewModel(container)
         RemoteViewModel::class.java -> RemoteViewModel(container)
         CloudViewerViewModel::class.java -> CloudViewerViewModel(container)
         S3SettingsViewModel::class.java -> S3SettingsViewModel(container)
@@ -103,6 +104,8 @@ class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
                 describe(c.albumImporter.importFromRemote())
             } catch (e: RemoteException) {
                 e.message ?: e.kind.userMessage
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.s3vault.app.security.SafeLog.e("AlbumsViewModel", "Album import failed unexpectedly", e)
                 RemoteErrorKind.UNKNOWN.userMessage
@@ -251,6 +254,8 @@ class S3SettingsViewModel(private val c: AppContainer) : ViewModel() {
             } catch (e: RemoteException) {
                 c.settings.saveConnectionResult(false, e.kind.name, System.currentTimeMillis())
                 ui.update { it.copy(resultOk = false, resultMessage = e.message ?: e.kind.userMessage) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 com.s3vault.app.security.SafeLog.e("S3SettingsViewModel", "Connection test failed unexpectedly", e)
                 ui.update { it.copy(resultOk = false, resultMessage = RemoteErrorKind.UNKNOWN.userMessage + " (" + e::class.java.simpleName + ")") }

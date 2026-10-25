@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
@@ -394,7 +394,7 @@ private fun Hero(est: CostEstimate, onHelp: () -> Unit) {
                     Icon(Icons.Filled.Savings, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("Coste mensual estimado", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = onHelp) { Icon(Icons.Filled.HelpOutline, "Cómo se calcula esta estimación") }
+                IconButton(onClick = onHelp) { Icon(Icons.AutoMirrored.Filled.HelpOutline, "Cómo se calcula esta estimación") }
             }
             if (est.monthlyUsd != null) {
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
@@ -446,7 +446,7 @@ private fun BasisTag(basis: Basis) {
     val (icon, text) = when (basis) {
         Basis.MEASURED -> Icons.Filled.Straighten to "Medido"
         Basis.ESTIMATED -> Icons.Filled.Calculate to "Estimado"
-        Basis.ASSUMED -> Icons.Filled.HelpOutline to "Suposición"
+        Basis.ASSUMED -> Icons.AutoMirrored.Filled.HelpOutline to "Suposición"
     }
     val container = if (basis == Basis.ASSUMED) MaterialTheme.status.warningContainer else MaterialTheme.colorScheme.surfaceContainerHigh
     val content = if (basis == Basis.ASSUMED) MaterialTheme.status.onWarningContainer else MaterialTheme.colorScheme.onSurfaceVariant

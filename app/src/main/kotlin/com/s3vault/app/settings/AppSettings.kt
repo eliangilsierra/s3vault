@@ -8,7 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.s3vault.app.domain.AuthMethod
 import com.s3vault.app.domain.RemoteKeys
 import com.s3vault.app.domain.S3Config
@@ -62,7 +62,21 @@ data class ConnectionStatus(
     val lastMessage: String?,
 )
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+/**
+ * One DataStore per settings file, created on first use. It is the same file the `preferencesDataStore("settings")` delegate used
+ * (`files/datastore/settings.preferences_pb`), so existing installations keep their preferences. Keying by path, not by process,
+ * is what lets every test with its own temporary files directory get its own store instead of a stale one from an earlier test.
+ */
+private val settingsStores = HashMap<String, DataStore<Preferences>>()
+private val settingsScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+private val Context.dataStore: DataStore<Preferences>
+    get() {
+        val file = java.io.File(applicationContext.filesDir, "datastore/settings.preferences_pb")
+        return synchronized(settingsStores) {
+            settingsStores.getOrPut(file.path) { PreferenceDataStoreFactory.create(scope = settingsScope, produceFile = { file }) }
+        }
+    }
 
 /** Non-secret preferences. Credentials never pass through here. */
 class AppSettings(private val context: Context) {
@@ -92,6 +106,7 @@ class AppSettings(private val context: Context) {
         val listedSource = stringPreferencesKey("remote_listed_source")
         val auditIntervalDays = intPreferencesKey("audit_interval_days")
         val privateAutoLockMs = longPreferencesKey("private_auto_lock_ms")
+        val onboardingProgress = stringPreferencesKey("onboarding_progress")
         val semanticEnabled = booleanPreferencesKey("semantic_enabled")
         val semanticCharging = booleanPreferencesKey("semantic_only_charging")
         val modelWifiOnly = booleanPreferencesKey("model_wifi_only")
@@ -284,6 +299,13 @@ class AppSettings(private val context: Context) {
             it[K.connMessage] = message
         }
     }
+
+    /** Where the first-run tour stands. Absent (a new or upgraded installation that never saw it) reads as NOT_STARTED. */
+    val onboardingProgress: Flow<com.s3vault.app.domain.onboarding.OnboardingProgress> = store.data.map { p ->
+        p[K.onboardingProgress]?.let { runCatching { com.s3vault.app.domain.onboarding.OnboardingProgress.valueOf(it) }.getOrNull() }
+            ?: com.s3vault.app.domain.onboarding.OnboardingProgress.NOT_STARTED
+    }
+    suspend fun setOnboardingProgress(v: com.s3vault.app.domain.onboarding.OnboardingProgress) = store.edit { it[K.onboardingProgress] = v.name }.let { }
 
     suspend fun setAutoBackup(v: Boolean) = store.edit { it[K.autoBackup] = v }.let { }
     suspend fun setWifiOnly(v: Boolean) = store.edit { it[K.wifiOnly] = v }.let { }

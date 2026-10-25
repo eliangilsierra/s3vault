@@ -47,7 +47,6 @@ data class MediaItem(
     val present: Boolean,
     val dateSource: DateSource = DateSource.CAPTURE,
 ) {
-    val isBackedUp: Boolean get() = syncState == SyncState.BACKED_UP
 }
 
 data class Album(
@@ -95,7 +94,6 @@ data class S3Config(
     val prefix: String,
     val authMethod: AuthMethod,
 ) {
-    val isComplete: Boolean get() = region.isNotBlank() && bucket.isNotBlank()
 }
 
 enum class AuthMethod { TEMPORARY, STATIC }

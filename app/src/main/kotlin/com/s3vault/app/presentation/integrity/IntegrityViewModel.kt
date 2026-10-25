@@ -124,7 +124,6 @@ class IntegrityViewModel(private val c: AppContainer) : ViewModel() {
     fun loadMore() { limit.update { it + PAGE } }
     fun toggle(key: String) = selection.update { if (key in it) it - key else it + key }
     fun clearSelection() { selection.value = emptySet() }
-    fun selectAllShown(keys: List<String>) { selection.value = keys.toSet() }
 
     private suspend fun wifiOnly() = c.settings.currentBackup().wifiOnly
 

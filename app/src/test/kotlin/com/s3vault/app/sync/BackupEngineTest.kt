@@ -330,7 +330,7 @@ class BackupEngineTest {
         env.engine().run(1)
         val i = item(1)
         assertEquals(SyncState.FAILED, i.syncState)
-        assertTrue(i.lastError!!.contains("multipart"))
+        assertTrue(i.lastError!!.contains("demasiado grande") && i.lastError!!.contains("4 GiB"))
     }
 
     @Test fun `successful uploads are logged and update the last transfer`() = runBlocking {

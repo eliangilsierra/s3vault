@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Search
@@ -155,7 +155,7 @@ private fun ScanCard(s: DuplicatesState, vm: DuplicatesViewModel) {
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (running && run != null && run.totalItems > 0) {
+            if (running && run.totalItems > 0) {
                 SlimProgress((run.doneItems.toFloat() / run.totalItems).coerceIn(0f, 1f))
                 Text("${run.doneItems} de ${run.totalItems}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -183,7 +183,7 @@ private fun HowItWorks() {
             Modifier.fillMaxWidth().heightIn(min = Space.touch).clickable(role = Role.Button, onClickLabel = if (open) "Ocultar" else "Mostrar") { open = !open },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s),
         ) {
-            Icon(Icons.Filled.HelpOutline, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Filled.HelpOutline, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Cómo se detecta y qué límites tiene", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

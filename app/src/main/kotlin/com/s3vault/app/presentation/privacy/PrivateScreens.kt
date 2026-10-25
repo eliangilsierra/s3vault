@@ -39,7 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -362,6 +362,7 @@ fun PrivateAlbumScreen(
         topBar = {
             if (selectionMode) AppTopBar(
                 title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
+                compact = true,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 navigation = { IconButton(onClick = vm::clearSelection) { Icon(Icons.Filled.Close, "Cancelar selección") } },
                 actions = {
@@ -372,7 +373,7 @@ fun PrivateAlbumScreen(
                         IconButton(onClick = { overflow = true }) { Icon(Icons.Filled.MoreVert, "Más acciones") }
                         DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
                             DropdownMenuItem(
-                                text = { Text("Mover a otro álbum") }, leadingIcon = { Icon(Icons.Filled.DriveFileMove, null) },
+                                text = { Text("Mover a otro álbum") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, null) },
                                 enabled = state.albums.size > 1, onClick = { overflow = false; moveSheet = true },
                             )
                         }

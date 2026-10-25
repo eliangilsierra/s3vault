@@ -155,6 +155,8 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
             try {
                 c.library.refresh(force)
                 error.value = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e // leaving the screen is not a failure to read the library
             } catch (e: Exception) {
                 error.value = "No se pudo leer la galería: " + Redactor.describe(e)
             } finally {
@@ -218,7 +220,6 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun isSectionSelected(key: Int): Boolean = key in selectedSections.value
     val sectionSelection: StateFlow<Set<Int>> get() = selectedSections
 
     /** The selected photos, read from the database (the grid only holds a page at a time). Reading and mapping run off the main thread. */

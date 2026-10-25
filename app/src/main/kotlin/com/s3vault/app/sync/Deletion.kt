@@ -92,9 +92,6 @@ class CloudDeletionController(
 ) {
     private val runLock = Mutex()
 
-    /** True while a deletion is in flight (a new one waits for it). */
-    val isRunning: Boolean get() = runLock.isLocked
-
     suspend fun delete(keys: List<String>, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): CloudDeleteResult = runLock.withLock {
         val ctx = remote.get() ?: throw RemoteException(RemoteErrorKind.NOT_CONFIGURED)
         val wanted = keys.distinct().filter { ctx.keys.isPhotoKey(it) }

@@ -57,3 +57,32 @@ Ver también [cloud-previews.md](cloud-previews.md#borrado-reglas-de-seguridad).
 Comprobado en código y pruebas: no hay credenciales embebidas ni claves en el repositorio; sin `HostnameVerifier`/`TrustManager` personalizados; HTTPS-only en release; `allowBackup=false`; ningún `Log` directo con datos de usuario (todo por `SafeLog`); secretos solo en `SecretStore`; sin permisos de internet más allá de `INTERNET`/`ACCESS_NETWORK_STATE`; permisos de medios mínimos (`READ_MEDIA_*`, `READ_EXTERNAL_STORAGE` hasta API 32), sin acceso a toda la unidad; los `Intent` de compartir usan permisos de URI temporales.
 
 Pendiente o fuera de alcance: bloqueo biométrico/PIN **de toda la app** (los álbumes privados sí se protegen; el resto de la galería y las credenciales guardadas siguen abiertas para quien tenga el teléfono desbloqueado), análisis de dependencias con herramienta externa, pruebas de penetración, y verificación en dispositivo real con Play Integrity/bootloader desbloqueado.
+
+## Revisión previa a la publicación (25 de octubre de 2026, versión 0.4.0)
+
+Qué se comprobó, cómo y con qué resultado. «Comprobado» significa que se ejecutó o se leyó el código; no es una auditoría independiente.
+
+| Comprobación | Cómo | Resultado |
+|---|---|---|
+| Secretos en el repositorio | `git ls-files` y `git grep` de patrones de claves AWS (`AKIA…`, `ASIA…`, bloques de clave privada) en todo lo versionado | Ninguno. Solo aparece la clave de ejemplo de la documentación de AWS (`AKIAIOSFODNN7EXAMPLE`) en pruebas. `keystore.properties`, `*.jks` y `*.keystore` están en `.gitignore`; `policy.json` y `lifecycle.json` (datos de la cuenta del propietario) están excluidos localmente |
+| Firma | `bundleRelease`/`assembleRelease` con `keystore.properties`, con variables de entorno y sin ninguna de las dos | Firmado en los dos primeros casos (verificado con `jarsigner`/`apksigner`); sin firmar, sin fallar, en el tercero. Ningún valor secreto en el repositorio |
+| Dependencias vulnerables | Lista real del classpath de release (254 artefactos) consultada en la base pública OSV (solo se envían coordenadas Maven) | **0 avisos conocidos** para esas versiones. Limitación: OSV solo conoce lo publicado; no sustituye a un análisis comercial |
+| Rastreadores | Nombres de las 254 dependencias | Ninguna de analítica, publicidad, informes de fallos ni mensajería |
+| Manifiesto final | Manifiesto fusionado de release | Permisos mínimos y justificados ([play-store/declarations.md](play-store/declarations.md)); `allowBackup=false`; sin `debuggable`; solo la actividad principal y componentes de bibliotecas exportados |
+| TLS | `network_security_config` | HTTPS obligatorio en release; solo `src/debug` permite HTTP a `localhost` |
+| Objetos públicos | Búsqueda de ACL públicas y políticas con principal `*` en el código | Ninguna: la app no establece ACL ni políticas |
+| Registros | `SafeLog`/`Redactor`, prueba `NoSecretsInLogsTest`, búsqueda de `Log.`/`println` directos | Solo `SafeLog` registra, con credenciales y tokens redactados |
+| Operaciones destructivas | Código y pruebas de borrado | Siempre con confirmación; borrar local y borrar en S3 son acciones separadas; la auditoría y las herramientas nuevas solo leen en S3 |
+| Mensajes de error | Revisión del catálogo de errores | Reescritos varios mensajes técnicos («SlowDown», «multipart», «checksum») en lenguaje comprensible; ninguno incluye secretos |
+
+### Riesgos residuales (no eliminados)
+
+- **Dispositivo comprometido o con acceso de superusuario:** el Keystore no impide usar las claves; ni los secretos ni los álbumes privados están protegidos frente a malware que corra con los permisos de la app o frente a root.
+- **La galería no se oculta en «recientes» ni en capturas de pantalla:** solo las pantallas con secretos y los álbumes privados bloquean capturas. Quien tenga el móvil desbloqueado puede abrir la galería y, con ella, usar las credenciales guardadas (no hay bloqueo de toda la app).
+- **Los originales se suben tal cual**, con sus metadatos EXIF (incluida la ubicación GPS). La app no los elimina antes de subir.
+- **Credenciales estáticas:** son de larga duración; la protección real es una política IAM de mínimo privilegio y poder revocarlas.
+- **Las copias en S3 no están cifradas de extremo a extremo:** dependen de la configuración y los permisos del bucket del usuario.
+- **Álbumes privados:** si se pierde la clave del dispositivo, no hay recuperación (por diseño).
+- **Un tercero con acceso a la cuenta de AWS del usuario** puede leer o borrar lo que su política permita, con o sin la app.
+- **Descarga opcional del modelo:** el contenido está fijado por tamaño y SHA-256, pero se descarga de `huggingface.co`; si ese servicio cambiara de URL, la descarga falla (no hay descarga insegura de reemplazo).
+- **No hay prueba de penetración ni revisión independiente.** No debe interpretarse la ausencia de hallazgos como garantía.

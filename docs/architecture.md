@@ -9,6 +9,7 @@ com.s3vault.app
 │   ├── cost/        inventario del bucket, tabla de precios (generada) y estimador de coste: código puro
 │   ├── sync/ integrity/ space/ duplicates/ smart/   centro de sincronización, veredictos de la auditoría, reglas de espacio, hash perceptual y agrupación, filtros de álbumes inteligentes: código puro
 │   ├── semantic/    paquete de modelo, tokenizador BPE, codec de vectores, top-K, traductor de consultas: código puro
+│   ├── onboarding/  política de cuándo se muestra el tutorial y lista de pasos de configuración de S3: código puro
 │   └── privacy/     VaultCrypto (AES-GCM por fragmentos), PrivateSession, VaultKeyring, modelos: código puro
 ├── data/local/      Room (índice y estado de sincronización), MediaStore (lectura), MediaIndexer (reconciliación), LibrarySql (consultas de la galería)
 ├── data/privacy/    KeystoreKeyring (Keystore + BiometricPrompt), PrivateVaultStore (archivos cifrados + filas), PrivateMover, caché de imágenes descifradas
@@ -55,6 +56,7 @@ Principios:
 - **Tres reglas de datos que ninguna herramienta rompe:** (1) borrar en el dispositivo y borrar en S3 siguen siendo dos acciones separadas, y las herramientas nuevas solo piden la primera por el flujo que ya existía; (2) nada se afirma sin comprobarlo (un fallo es «desconocido», no «falta»); (3) los álbumes privados **no están en el índice de la galería** (tablas propias), así que ninguna consulta existente puede filtrarlos por descuido.
 - **Álbumes privados sin servidor:** clave en el Keystore atada a la identidad del usuario, archivos cifrados por fragmentos con AES-GCM y metadatos cifrados; la sesión (clave en memoria) vive en `PrivateSession` y bloquea pantallas y cachés al instante. Detalle, pérdida de clave y límites en [private-albums.md](private-albums.md).
 - **Búsqueda por contenido en el dispositivo:** CLIP cuantizado con ONNX Runtime, modelo descargado una vez, opcional y verificado por SHA-256, vectores cuantizados en Room, sin ningún servicio externo de IA ([semantic-search.md](semantic-search.md)).
+- **Tutorial y ayuda sin estado propio:** el tutorial de primera ejecución (`presentation/onboarding`) solo guarda *en qué punto va* (`NOT_STARTED`, `IN_PROGRESS`, `DONE`, en los ajustes) y lee de lo ya guardado si S3 está configurado, hay credenciales o se probó la conexión; no pide ni guarda secretos (los introduce el usuario en las pantallas de Ajustes, que bloquean las capturas). Una instalación que ya tenía configuración o biblioteca indexada no lo ve. Se puede repetir desde Ajustes → Ayuda y tutorial.
 - **Sin DI framework:** `AppContainer` es un grafo manual. Menos dependencias, arranque más simple.
 
 ## Dependencias (verificadas)

@@ -9,14 +9,14 @@ enum class RemoteErrorKind(val retryable: Boolean, val userMessage: String) {
     BUCKET_NOT_FOUND(false, "El bucket no existe (o el nombre está mal escrito)."),
     WRONG_REGION(false, "La región configurada no coincide con la del bucket."),
     ACCESS_DENIED(false, "Permisos insuficientes para esta operación. Revisa la política IAM."),
-    OBJECT_NOT_FOUND(false, "El objeto remoto no existe."),
+    OBJECT_NOT_FOUND(false, "El archivo ya no existe en S3 (puede haberse borrado desde fuera de la app)."),
     NETWORK(true, "Error temporal de red. Se reintentará."),
-    THROTTLED(true, "AWS limitó las solicitudes (SlowDown/cuota). Se reintentará más tarde."),
-    QUOTA_EXCEEDED(false, "Se alcanzó un límite o cuota de la cuenta de AWS."),
-    INTEGRITY_MISMATCH(true, "La verificación de integridad falló (checksum distinto)."),
-    FILE_UNAVAILABLE(false, "No se puede leer el archivo local."),
-    FILE_TOO_LARGE(false, "El archivo supera el tamaño máximo admitido por esta versión (subida simple, sin multipart)."),
-    UNKNOWN(true, "Error inesperado de S3."),
+    THROTTLED(true, "Amazon S3 está limitando las solicitudes en este momento. Se reintentará más tarde."),
+    QUOTA_EXCEEDED(false, "Tu cuenta de AWS alcanzó un límite o cuota. Revísalo en tu cuenta de AWS."),
+    INTEGRITY_MISMATCH(true, "La copia subida no coincide con el original, así que no se da por respaldada. Se reintentará."),
+    FILE_UNAVAILABLE(false, "No se puede leer el archivo del dispositivo (¿se movió o se borró?)."),
+    FILE_TOO_LARGE(false, "El archivo es demasiado grande para esta versión de la app (el límite es 4 GiB)."),
+    UNKNOWN(true, "Amazon S3 devolvió un error inesperado. Se reintentará; si se repite, revisa la conexión y la configuración."),
 }
 
 class RemoteException(

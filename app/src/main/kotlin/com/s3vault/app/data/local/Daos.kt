@@ -46,9 +46,6 @@ interface MediaDao {
     @Query("SELECT mediaStoreId, contentSha256, remoteVersionId FROM media_items WHERE present = 1 AND (contentSha256 IS NOT NULL OR remoteVersionId IS NOT NULL)")
     suspend fun hashedItems(): List<HashedItem>
 
-    @Query("SELECT * FROM media_items WHERE present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE') ORDER BY dateTakenMs DESC, mediaStoreId DESC")
-    fun observeGallery(includeVideos: Boolean): Flow<List<MediaItemEntity>>
-
     // ---- Smart gallery: dynamic queries built by LocalLibrarySql (every value bound, never concatenated).
 
     @RawQuery(observedEntities = [MediaItemEntity::class])
@@ -122,24 +119,18 @@ interface MediaDao {
     @Query("SELECT syncState, COUNT(*) AS n FROM media_items WHERE present = 1 OR syncState != 'LOCAL_ONLY' GROUP BY syncState")
     fun observeCounts(): Flow<List<StateCount>>
 
-    @Query("SELECT * FROM media_items WHERE syncState IN (:states) AND present = 1 ORDER BY dateTakenMs DESC")
-    fun observeByStates(states: List<SyncState>): Flow<List<MediaItemEntity>>
-
-    @Query("SELECT * FROM media_items WHERE syncState = 'QUEUED' AND present = 1 ORDER BY queuedAtMs ASC, mediaStoreId ASC LIMIT :limit")
-    suspend fun nextQueued(limit: Int): List<MediaItemEntity>
-
     @Query("SELECT * FROM media_items WHERE syncState = 'QUEUED' AND present = 1 AND mediaStoreId NOT IN (:excluded) ORDER BY queuedAtMs ASC, mediaStoreId ASC LIMIT :limit")
     suspend fun nextQueuedExcluding(excluded: List<Long>, limit: Int): List<MediaItemEntity>
-
-    /** S3 objects that still have their file on this device (rows whose file is gone only point to S3). */
-    @Query("SELECT remoteKey FROM media_items WHERE remoteKey IS NOT NULL AND present = 1")
-    fun observeBackedUpKeys(): Flow<List<String>>
 
     @Query("SELECT COUNT(*) FROM media_items WHERE contentSha256 = :sha AND present = 1")
     suspend fun countLocalWithHash(sha: String): Int
 
     @Query("SELECT COUNT(*) FROM media_items WHERE syncState = 'QUEUED' AND present = 1")
     suspend fun queuedCount(): Int
+
+    /** True once the library was ever indexed (any row, present or not): tells an existing installation from a new one. */
+    @Query("SELECT EXISTS(SELECT 1 FROM media_items)")
+    suspend fun hasAnyRow(): Boolean
 
     @Query("SELECT * FROM media_items WHERE syncState = 'LOCAL_ONLY' AND present = 1 AND backupExcluded = 0 AND (:includeVideos = 1 OR kind = 'IMAGE')")
     suspend fun pendingLocalOnly(includeVideos: Boolean): List<MediaItemEntity>
@@ -222,9 +213,6 @@ interface MediaDao {
     @Query("UPDATE media_items SET syncState = 'LOCAL_ONLY', queuedAtMs = NULL WHERE syncState = 'QUEUED'")
     suspend fun dequeueAll(): Int
 
-    @Query("SELECT MAX(lastBackupAtMs) FROM media_items")
-    fun observeLastBackup(): Flow<Long?>
-
     // ---- Smart albums: see SmartAlbumSql. The tables a clause may read are all observed, so an album follows every change.
 
     @RawQuery(observedEntities = [MediaItemEntity::class, IntegrityResultEntity::class, AlbumItemEntity::class])
@@ -257,9 +245,6 @@ interface MediaDao {
     /** First audit of an older backup: its current version marker becomes the starting point for later comparisons. */
     @Query("UPDATE media_items SET remoteEtag = :etag WHERE remoteKey = :key AND remoteEtag IS NULL")
     suspend fun adoptEtag(key: String, etag: String): Int
-
-    @Query("UPDATE media_items SET remoteEtag = :etag WHERE remoteKey = :key")
-    suspend fun replaceEtag(key: String, etag: String): Int
 
     /**
      * Repair by re-upload, chosen by the user: the file on this device goes back to "not backed up" with no link to the bad S3
@@ -385,10 +370,6 @@ interface RemoteDao {
     /** Which of these versions (content hashes) have an object in the cached listing. */
     @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds)")
     suspend fun versionsListed(versionIds: List<String>): List<String>
-
-    /** Versions (content hashes) that some object outside [excludedKeys] still uses, so their shared preview must stay. */
-    @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds) AND key NOT IN (:excludedKeys)")
-    suspend fun versionsStillUsed(versionIds: List<String>, excludedKeys: List<String>): List<String>
 
     @Query("SELECT * FROM remote_objects WHERE versionId = :versionId AND sizeBytes = :size LIMIT 1")
     suspend fun findByContent(versionId: String, size: Long): RemoteObjectEntity?
@@ -520,9 +501,6 @@ interface AlbumDao {
 
     @Query("SELECT mediaStoreId FROM album_items WHERE albumId = :albumId")
     suspend fun memberIds(albumId: Long): List<Long>
-
-    @Query("SELECT albumId FROM album_items WHERE mediaStoreId = :mediaId")
-    suspend fun albumsOf(mediaId: Long): List<Long>
 
     @Insert
     suspend fun insert(album: AlbumEntity): Long
@@ -785,9 +763,6 @@ interface DuplicateDao {
     @Query("SELECT COUNT(*) FROM duplicate_ignored")
     fun observeIgnoredCount(): Flow<Int>
 
-    @Query("DELETE FROM media_analysis")
-    suspend fun clearAnalysis()
-
     @Query("DELETE FROM media_analysis WHERE mediaStoreId NOT IN (SELECT mediaStoreId FROM media_items)")
     suspend fun dropOrphanAnalysis(): Int
 }
@@ -882,9 +857,6 @@ interface SemanticDao {
 interface PrivateDao {
     @Query("SELECT * FROM private_vault WHERE id = 1")
     suspend fun vault(): PrivateVaultEntity?
-
-    @Query("SELECT COUNT(*) FROM private_vault")
-    fun observeVaultCount(): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertVault(v: PrivateVaultEntity)

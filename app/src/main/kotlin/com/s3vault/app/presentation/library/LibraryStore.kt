@@ -33,7 +33,9 @@ class LibraryStore(private val settings: AppSettings) {
     private var loaded = false
 
     /** Applies the remembered sort/group/density once per process. */
-    suspend fun load() = mutex.withLock {
+    suspend fun load() { mutex.withLock { loadLocked() } }
+
+    private suspend fun loadLocked() {
         if (loaded) return
         val p = settings.libraryPrefs.first()
         local.update { it.copy(sort = p.localSort, descending = p.localDescending, group = p.localGroup) }

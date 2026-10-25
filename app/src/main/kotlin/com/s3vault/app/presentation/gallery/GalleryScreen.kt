@@ -1,9 +1,7 @@
 package com.s3vault.app.presentation.gallery
 
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -100,6 +98,7 @@ import com.s3vault.app.presentation.library.SectionHeading
 import com.s3vault.app.presentation.library.TimelineAction
 import com.s3vault.app.presentation.library.TimelineIndex
 import com.s3vault.app.presentation.library.filterChips
+import com.s3vault.app.presentation.mediaPermissions
 import com.s3vault.app.presentation.shareMedia
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.ui.AppTopBar
@@ -112,14 +111,6 @@ import com.s3vault.app.presentation.ui.Tone
 import com.s3vault.app.presentation.ui.rememberReducedMotion
 import com.s3vault.app.sync.MediaAccess
 import kotlinx.coroutines.launch
-
-private fun requiredPermissions(): Array<String> = when {
-    Build.VERSION.SDK_INT >= 34 -> arrayOf(
-        Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-    )
-    Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-}
 
 private fun count(n: Int) = "%,d".format(java.util.Locale.forLanguageTag("es"), n)
 
@@ -190,6 +181,7 @@ fun GalleryScreen(
                 when (mode) {
                     2 -> AppTopBar(
                         title = if (state.selected.size == 1) "1 seleccionada" else "${state.selected.size} seleccionadas",
+                        compact = true,
                         subtitle = when {
                             summary.inCloud == 0 -> "Solo en este dispositivo"
                             summary.inCloud == summary.total -> "Todas con copia en S3"
@@ -272,7 +264,7 @@ fun GalleryScreen(
                     title = "Acceso parcial",
                     body = "Acceso parcial: solo ves las fotos que elegiste.",
                     actionLabel = "Gestionar",
-                    onAction = { launcher.launch(requiredPermissions()) },
+                    onAction = { launcher.launch(mediaPermissions()) },
                     modifier = Modifier.padding(horizontal = Space.screen, vertical = Space.s),
                 )
             }
@@ -307,7 +299,7 @@ fun GalleryScreen(
                     body = "La galería lee tus fotos y vídeos directamente del dispositivo. Nada se envía a ningún sitio hasta que configures Amazon S3 y elijas respaldar. " +
                         "Si ya lo denegaste, Android puede no volver a preguntar: abre los ajustes de la app.",
                 ) {
-                    PrimaryButton("Conceder acceso", { launcher.launch(requiredPermissions()) }, Modifier.fillMaxWidth())
+                    PrimaryButton("Conceder acceso", { launcher.launch(mediaPermissions()) }, Modifier.fillMaxWidth())
                     QuietButton("Abrir ajustes de la app", {
                         ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)))
                     })

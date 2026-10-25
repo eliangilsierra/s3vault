@@ -56,7 +56,7 @@ ONNX Runtime añade una biblioteca nativa por ABI al APK (guardada sin comprimir
 | armeabi-v7a | 19,4 MiB |
 | x86 / x86_64 | ≈ 33 MiB cada una |
 
-Medido con `assembleRelease` (R8): **APK universal con las cuatro ABI 119 MiB; solo ARM (arm64 + armv7) 53,1 MiB; solo arm64 33,5 MiB**, frente a unos 5,7 MB antes de añadir la función. La build de release se limita por defecto a **arm64-v8a** (`ndk.abiFilters`, 33,5 MiB); `-PreleaseAbis=arm64-v8a,armeabi-v7a` añade 32 bits (53,1 MiB) y `...,x86_64` permite probarla en el emulador x86. Con un *app bundle* cada dispositivo recibe solo su ABI (≈ 33 MiB en arm64). Es el coste de una búsqueda por contenido sin servidor y lo asumen **todos** los usuarios aunque no la activen; reducirlo exigiría una compilación de ONNX Runtime con solo los operadores de CLIP (no hecha) o entregar la función como módulo opcional.
+Medido con `assembleRelease` (R8): **APK universal con las cuatro ABI 119 MiB; solo ARM (arm64 + armv7) 53,1 MiB; solo arm64 33,6 MiB**, frente a unos 5,7 MB antes de añadir la función. La build de release se limita por defecto a **arm64-v8a** (`ndk.abiFilters`, 33,6 MiB); `-PreleaseAbis=arm64-v8a,armeabi-v7a` añade 32 bits (53,1 MiB) y `...,x86_64` permite probarla en el emulador x86. Con un *app bundle* cada dispositivo recibe solo su ABI (≈ 33 MiB en arm64). Es el coste de una búsqueda por contenido sin servidor y lo asumen **todos** los usuarios aunque no la activen; reducirlo exigiría una compilación de ONNX Runtime con solo los operadores de CLIP (no hecha) o entregar la función como módulo opcional.
 
 ## Limitaciones
 
