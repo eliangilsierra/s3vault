@@ -78,10 +78,13 @@ class SmartGalleryUiTest {
             container.settings.saveS3Config(S3Config("eu-west-1", "test-bucket", "sg/", AuthMethod.STATIC))
         }
         container.endpointOverride = server.url("/").toString().trimEnd('/')
+        // The date-jump scenario needs the 2021 photo to sit far below a long list of newer pictures: bring them, whatever the device holds.
+        if (testName.methodName.startsWith("localGalleryGroups")) BulkPerfSupport.insertPhotos("sgfill_", 150)
     }
 
     @After fun tearDown() {
         container.endpointOverride = null
+        BulkPerfSupport.deletePhotos("sgfill_")
         runBlocking(Dispatchers.IO) {
             inserted.forEach { runCatching { instrumentation.targetContext.contentResolver.delete(it, null, null) } }
             instrumentation.targetContext.contentResolver.delete(
