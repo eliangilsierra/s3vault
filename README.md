@@ -4,7 +4,7 @@ Galería de fotos para Android que, si tú quieres, guarda copias de seguridad d
 
 La aplicación habla directamente con la API de Amazon S3 usando credenciales que controlas tú. No hay servidores del desarrollador, cuentas de usuario, suscripciones, anuncios ni telemetría.
 
-> **Estado:** versión 0.4.0. Todavía **no está publicada en Google Play**; los materiales para publicarla son borradores en [docs/play-store/](docs/play-store/README.md). Se reparte como APK a probadores.
+> **Estado:** versión 0.4.1. Todavía **no está publicada en Google Play**; los materiales para publicarla son borradores en [docs/play-store/](docs/play-store/README.md). Se reparte como APK a probadores.
 
 ## Qué puedes hacer
 

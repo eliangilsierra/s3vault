@@ -1,6 +1,6 @@
 # Sección «Seguridad de los datos» de Google Play: borrador de respuestas
 
-> **Estado: borrador para que el propietario lo revise y lo rellene en Play Console. No se ha enviado nada.** Se basa en el comportamiento real de la versión 0.4.0 (código, manifiesto y las 254 dependencias de la versión de producción) y en las definiciones vigentes de Play, consultadas el 25 de octubre de 2026 en la ayuda oficial («Proporcionar información para la sección Seguridad de los datos»):
+> **Estado: borrador para que el propietario lo revise y lo rellene en Play Console. No se ha enviado nada.** Se basa en el comportamiento real de la versión 0.4.1 (código, manifiesto y las 254 dependencias de la versión de producción) y en las definiciones vigentes de Play, consultadas el 25 de octubre de 2026 en la ayuda oficial («Proporcionar información para la sección Seguridad de los datos»):
 >
 > - **Recopilar** = transmitir datos del usuario fuera del dispositivo, incluidos los enviados por bibliotecas o SDK, vayan al desarrollador o a un tercero.
 > - **Compartir** = transferir datos recopilados a un tercero. Quedan exentas las transferencias a **proveedores de servicios** que actúan solo en nombre del desarrollador y las **acciones iniciadas por el usuario** que este espera razonablemente.

@@ -48,12 +48,12 @@ jarsigner -verify -verbose:summary -certs app/build/outputs/bundle/release/app-r
 $ANDROID_HOME/build-tools/<versión>/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 ```
 
-## Resultado de la última comprobación (versión 0.4.0, versionCode 6)
+## Resultado de la última comprobación (versión 0.4.1, versionCode 7)
 
 | Artefacto | Resultado |
 |---|---|
-| `app-release.aab` | 18 991 437 bytes (18,1 MiB comprimido), solo `arm64-v8a`, firmado (RSA de 4096 bits, SHA-256) y **verificado con `jarsigner`**. Contiene el mapa de ofuscación (`proguard.map`) para desofuscar fallos en Play, y ningún archivo de depuración |
-| `app-release.apk` | 35 238 516 bytes (33,6 MiB), `versionCode 6`, `versionName 0.4.0`, firma v2 **verificada con `apksigner`** |
+| `app-release.aab` | 18 991 426 bytes (18,1 MiB comprimido), solo `arm64-v8a`, firmado (RSA de 4096 bits, SHA-256) y **verificado con `jarsigner`**. Contiene el mapa de ofuscación (`proguard.map`) para desofuscar fallos en Play, y ningún archivo de depuración |
+| `app-release.apk` | 35 238 516 bytes (33,6 MiB), `versionCode 7`, `versionName 0.4.1`, firma v2 **verificada con `apksigner`** |
 
 El tamaño real de descarga lo calcula Play Console al subir el paquete; las cifras de arriba son las del archivo. No se ha subido ningún artefacto a Google Play.
 

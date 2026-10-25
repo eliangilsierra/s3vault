@@ -28,8 +28,8 @@ android {
         applicationId = "com.s3vault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.4.1"
         testInstrumentationRunner = "com.s3vault.app.S3VaultTestRunner"
     }
 

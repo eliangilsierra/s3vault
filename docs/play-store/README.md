@@ -1,6 +1,6 @@
 # Publicación en Google Play: materiales
 
-**Todo lo de esta carpeta es un borrador. No se ha publicado, enviado ni aprobado nada.** Se redactó a partir del comportamiento real de la versión 0.4.0 y de la ayuda oficial de Google Play consultada el 25 de octubre de 2026.
+**Todo lo de esta carpeta es un borrador. No se ha publicado, enviado ni aprobado nada.** Se redactó a partir del comportamiento real de la versión 0.4.1 y de la ayuda oficial de Google Play consultada el 25 de octubre de 2026.
 
 | Documento | Contenido |
 |---|---|
