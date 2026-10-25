@@ -3,7 +3,6 @@ package app.s3vault.data.local.media
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
-import androidx.core.content.ContextCompat
 import app.s3vault.domain.model.MediaItem
 import app.s3vault.domain.repo.MediaSource
 import app.s3vault.domain.repo.MediaStat
@@ -41,7 +40,7 @@ class MediaStoreSource(context: Context) : MediaSource {
         return resolver.openInputStream(source) ?: throw FileNotFoundException("No se pudo abrir el archivo")
     }
 
-    private fun hasMediaLocation() = ContextCompat.checkSelfPermission(
-        appContext, android.Manifest.permission.ACCESS_MEDIA_LOCATION,
-    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    private fun hasMediaLocation() =
+        appContext.checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
 }

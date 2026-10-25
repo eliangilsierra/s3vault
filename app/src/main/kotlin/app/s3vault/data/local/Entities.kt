@@ -1,6 +1,5 @@
 package app.s3vault.data.local
 
-import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -93,7 +92,7 @@ data class RemoteObjectEntity(
     val lastModifiedMs: Long?,
     val etag: String?,
     val refreshedAtMs: Long,
-    @ColumnInfo(defaultValue = "IDLE") val restoreStatus: RestoreStatus = RestoreStatus.IDLE,
+    val restoreStatus: RestoreStatus = RestoreStatus.IDLE,
     val restoreError: String? = null,
 )
 

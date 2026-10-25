@@ -36,6 +36,7 @@ import app.s3vault.presentation.Strings
 import app.s3vault.presentation.common.Notice
 import app.s3vault.presentation.common.rememberContainer
 import app.s3vault.settings.AppSettings
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -155,8 +156,12 @@ fun BackupScreen(onOpenS3Config: () -> Unit, onOpenSecurity: () -> Unit) {
 @Composable
 private fun produceCredentialStatus(c: app.s3vault.AppContainer) =
     androidx.compose.runtime.produceState<CredentialStatus>(CredentialStatus.NotConfigured, c) {
-        // Sin red: solo lee el estado local. Se refresca cuando cambian los ajustes (p. ej. un bloqueo).
-        c.settings.settings.collect { value = c.credentials.status() }
+        // Sin red: solo lee el estado local. Se refresca al cambiar los ajustes y cada 15 s (cuenta atrás de expiración).
+        launch { c.settings.settings.collect { value = c.credentials.status() } }
+        while (true) {
+            value = c.credentials.status()
+            delay(15_000)
+        }
     }
 
 @Composable

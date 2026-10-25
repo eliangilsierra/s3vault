@@ -10,12 +10,12 @@ import app.s3vault.domain.model.ErrorKind
 import app.s3vault.domain.model.SyncState
 
 class Converters {
-    @TypeConverter fun syncState(v: SyncState): String = v.name
-    @TypeConverter fun syncState(v: String): SyncState = SyncState.valueOf(v)
-    @TypeConverter fun errorKind(v: ErrorKind?): String? = v?.name
-    @TypeConverter fun errorKind(v: String?): ErrorKind? = v?.let { runCatching { ErrorKind.valueOf(it) }.getOrNull() }
-    @TypeConverter fun restoreStatus(v: RestoreStatus): String = v.name
-    @TypeConverter fun restoreStatus(v: String): RestoreStatus = RestoreStatus.valueOf(v)
+    @TypeConverter fun syncStateToString(v: SyncState): String = v.name
+    @TypeConverter fun stringToSyncState(v: String): SyncState = SyncState.valueOf(v)
+    @TypeConverter fun errorKindToString(v: ErrorKind?): String? = v?.name
+    @TypeConverter fun stringToErrorKind(v: String?): ErrorKind? = v?.let { runCatching { ErrorKind.valueOf(it) }.getOrNull() }
+    @TypeConverter fun restoreStatusToString(v: RestoreStatus): String = v.name
+    @TypeConverter fun stringToRestoreStatus(v: String): RestoreStatus = RestoreStatus.valueOf(v)
 }
 
 @Database(

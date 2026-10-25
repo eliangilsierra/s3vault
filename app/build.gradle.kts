@@ -31,7 +31,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     sourceSets {
         // Los tests de lógica pura (carpeta `pure`) se ejecutan también en el arnés JVM (tools/jvm-check).
