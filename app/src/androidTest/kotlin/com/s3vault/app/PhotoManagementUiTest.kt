@@ -168,6 +168,7 @@ class PhotoManagementUiTest {
 
     private fun waitFor(ms: Long = 20_000, cond: () -> Boolean) = compose.waitUntil(ms, cond)
     private fun textShown(t: String, substring: Boolean = false) = compose.onAllNodesWithText(t, substring = substring).fetchSemanticsNodes().isNotEmpty()
+    private fun descShown(d: String) = compose.onAllNodesWithContentDescription(d, substring = true).fetchSemanticsNodes().isNotEmpty()
     private fun cell(name: String) = compose.onNodeWithContentDescription(name, substring = true)
     private fun tab(label: String) = compose.onNode(hasText(label) and hasClickAction())
 
@@ -236,11 +237,11 @@ class PhotoManagementUiTest {
 
         // The S3 library shows the photo with its preview, and the viewer says it is a preview, not the original.
         tab("S3").performClick()
-        waitFor { textShown("ui_b.jpg", substring = true) }
+        waitFor { descShown("ui_b.jpg") }
         compose.waitForIdle()
         Thread.sleep(1500) // let the thumbnail GET finish
         shot("07-s3-library")
-        compose.onNodeWithText("ui_b.jpg").performClick()
+        cell("ui_b.jpg").performClick()
         waitFor { textShown("Vista previa · no es el original", substring = true) }
         repeat(8) { Thread.sleep(250); compose.waitForIdle() } // Compose only renders frames while the test is inside a Compose call
         shot("08-cloud-viewer")
@@ -256,8 +257,8 @@ class PhotoManagementUiTest {
             container.library.refresh()
         }
         tab("S3").performClick()
-        waitFor { textShown("ui_b.jpg", substring = true) }
-        compose.onNodeWithText("ui_b.jpg").performTouchInput { longClick() }
+        waitFor { descShown("ui_b.jpg") }
+        cell("ui_b.jpg").performTouchInput { longClick() }
         compose.onNodeWithText("Solo existen en S3").assertIsDisplayed()
         compose.onNodeWithContentDescription("Eliminar de S3…").performClick()
 

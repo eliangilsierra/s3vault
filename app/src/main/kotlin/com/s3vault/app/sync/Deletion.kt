@@ -8,8 +8,15 @@ import com.s3vault.app.domain.RemoteStorage
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.security.Redactor
 import com.s3vault.app.security.SafeLog
+import com.s3vault.app.domain.TransferEventType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * One thing the user can delete, described by *where its copies are*. The two kinds of deletion are separate on
@@ -65,18 +72,33 @@ data class CloudDeleteResult(
  * - Local files are never touched: a photo that still exists on the device just stops being "backed up" and is flagged
  *   so automatic backup does not upload it again behind the user's back.
  * - S3 deletes are idempotent, so [delete] can be repeated with the failed keys as a retry.
- * - Room is updated after every confirmed batch, so the UI never shows a photo that S3 already dropped, and a
- *   cancelled or interrupted run leaves consistent state.
+ * - Keys go to S3 in DeleteObjects requests of up to [batchSize] (1 000, S3's maximum): the cost of a bulk deletion is a
+ *   handful of round trips, not one per hundred photos. S3 answers per key, so one bad key never hides the rest.
+ * - A throttled or briefly unreachable S3 is retried a couple of times with a growing pause, for the whole request and for
+ *   individual keys alike. Anything still failing afterwards is reported as failed, never as deleted.
+ * - Room is updated after every confirmed batch (even if the user cancels right then), so the UI never shows a photo that
+ *   S3 already dropped, and a cancelled or interrupted run leaves consistent state. No transaction is open during a request.
+ * - Runs are serialised: two overlapping bulk deletions would only repeat each other's requests.
  */
 class CloudDeletionController(
     private val db: AppDatabase,
     private val remote: RemoteContextProvider,
     private val onVersionsDeleted: (Collection<String>) -> Unit = {},
+    /** One entry per run with what was really deleted: the storage-cost estimate uses it to tell its inventory is stale. */
+    private val events: EventLog? = null,
+    private val batchSize: Int = RemoteStorage.MAX_DELETE_BATCH,
+    /** Pause before retry number [attempt] (0-based). Replaced in tests so they do not wait. */
+    private val backoff: suspend (attempt: Int) -> Unit = { attempt -> delay(RETRY_BASE_MS shl attempt) },
 ) {
-    suspend fun delete(keys: List<String>, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): CloudDeleteResult {
+    private val runLock = Mutex()
+
+    /** True while a deletion is in flight (a new one waits for it). */
+    val isRunning: Boolean get() = runLock.isLocked
+
+    suspend fun delete(keys: List<String>, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): CloudDeleteResult = runLock.withLock {
         val ctx = remote.get() ?: throw RemoteException(RemoteErrorKind.NOT_CONFIGURED)
         val wanted = keys.distinct().filter { ctx.keys.isPhotoKey(it) }
-        val restoring = wanted.chunked(400).flatMap { db.remote().getByKeys(it) }
+        val restoring = wanted.chunked(DB_CHUNK).flatMap { db.remote().getByKeys(it) }
             .filter { it.state == SyncState.RESTORING }.map { it.key }.toSet()
         val eligible = wanted.filter { it !in restoring }
 
@@ -86,31 +108,63 @@ class CloudDeletionController(
         var done = 0
         onProgress(0, eligible.size)
 
-        for (batch in eligible.chunked(RemoteStorage.MAX_DELETE_BATCH)) {
-            currentCoroutineContext().ensureActive()
-            val reason = stopReason
-            if (reason != null) {
-                batch.forEach { failed[it] = reason } // not attempted: the same cause would repeat
-            } else {
-                try {
-                    val report = ctx.storage.delete(batch)
-                    failed += report.failed
-                    if (report.deleted.isNotEmpty()) {
-                        deleted += report.deleted
-                        deletePreviews(ctx, report.deleted)
-                        forget(report.deleted)
-                    }
-                    // A per-key AccessDenied is the IAM policy: the rest of the batches would be refused as well.
-                    if (RemoteErrorKind.ACCESS_DENIED in report.failed.values) stopReason = RemoteErrorKind.ACCESS_DENIED
-                } catch (e: RemoteException) {
-                    batch.forEach { failed[it] = e.kind }
-                    stopReason = e.kind
+        try {
+            for (batch in eligible.chunked(batchSize)) {
+                currentCoroutineContext().ensureActive()
+                val reason = stopReason
+                if (reason != null) {
+                    batch.forEach { failed[it] = reason } // not attempted: the same cause would repeat
+                } else {
+                    val outcome = deleteBatch(ctx, batch)
+                    deleted += outcome.deleted
+                    failed += outcome.failed
+                    stopReason = outcome.stopReason
                 }
+                done += batch.size
+                onProgress(done, eligible.size)
             }
-            done += batch.size
-            onProgress(done, eligible.size)
+        } finally {
+            // Also when cancelled half way: what was deleted stays deleted and must be counted.
+            if (deleted.isNotEmpty()) withContext(NonCancellable) { events?.log(TransferEventType.CLOUD_DELETED, "${deleted.size} elementos") }
         }
-        return CloudDeleteResult(deleted, failed, restoring.size)
+        CloudDeleteResult(deleted, failed, restoring.size)
+    }
+
+    private class BatchOutcome(val deleted: List<String>, val failed: Map<String, RemoteErrorKind>, val stopReason: RemoteErrorKind?)
+
+    /** One batch, retrying what S3 said it could not do *now* (throttling, a dropped connection). */
+    private suspend fun deleteBatch(ctx: RemoteContext, batch: List<String>): BatchOutcome {
+        val deleted = ArrayList<String>()
+        val failed = LinkedHashMap<String, RemoteErrorKind>()
+        var pending = batch
+        var attempt = 0
+        var stop: RemoteErrorKind? = null
+        while (pending.isNotEmpty()) {
+            val report = try {
+                ctx.storage.delete(pending)
+            } catch (e: RemoteException) {
+                if (e.kind in TRANSIENT && attempt < MAX_RETRIES) { backoff(attempt++); continue }
+                pending.forEach { failed[it] = e.kind }
+                stop = e.kind
+                break
+            }
+            if (report.deleted.isNotEmpty()) {
+                deleted += report.deleted
+                // The rows go as soon as S3 confirmed, even if the user cancels this very moment.
+                withContext(NonCancellable) { forget(report.deleted) }
+                deletePreviews(ctx, report.deleted)
+            }
+            // A per-key AccessDenied is the IAM policy: the rest of the batches would be refused as well.
+            if (RemoteErrorKind.ACCESS_DENIED in report.failed.values) stop = RemoteErrorKind.ACCESS_DENIED
+            val again = report.failed.filterValues { it in TRANSIENT }.keys.toList()
+            // What cannot be retried is final now; what can is decided by the next attempt (or by the last one, below).
+            report.failed.forEach { (k, kind) -> if (k !in again) failed[k] = kind }
+            if (again.isEmpty()) break
+            if (attempt >= MAX_RETRIES) { again.forEach { failed[it] = report.failed.getValue(it) }; break }
+            backoff(attempt++)
+            pending = again
+        }
+        return BatchOutcome(deleted, failed, stop)
     }
 
     /** Previews are shared by every object with the same content, so one that is still referenced is kept. */
@@ -118,11 +172,13 @@ class CloudDeletionController(
         try {
             val versions = deletedKeys.mapNotNull { ctx.keys.parse(it)?.versionId }.distinct()
             if (versions.isEmpty()) return
-            val stillUsed = db.remote().versionsStillUsed(versions, deletedKeys).toSet()
+            // The deleted rows are already gone from the cached listing, so any version still listed is used by another object.
+            val stillUsed = versions.chunked(DB_CHUNK).flatMap { db.remote().versionsListed(it) }.toHashSet()
             val orphaned = versions.filter { it !in stillUsed }
             if (orphaned.isEmpty()) return
-            ctx.storage.delete(orphaned.map { ctx.keys.thumbnailKey(it) })
-            onVersionsDeleted(orphaned)
+            orphaned.chunked(batchSize).forEach { ctx.storage.delete(it.map(ctx.keys::thumbnailKey)) }
+            // Evicting cached previews deletes files: never on the caller's (possibly main) thread.
+            withContext(Dispatchers.IO) { onVersionsDeleted(orphaned) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -134,20 +190,36 @@ class CloudDeletionController(
     private suspend fun forget(keys: List<String>) {
         db.withTransaction {
             val media = db.media()
-            val orphans = media.orphanIdsOfRemoteKeys(keys)
-            media.detachRemote(keys)
+            val orphans = keys.chunked(DB_CHUNK).flatMap { media.orphanIdsOfRemoteKeys(it) }
+            keys.chunked(DB_CHUNK).forEach { media.detachRemote(it) }
             if (orphans.isNotEmpty()) {
-                media.deleteLocalRows(orphans)
-                db.albums().removeMediaEverywhere(orphans)
+                orphans.chunked(DB_CHUNK).forEach {
+                    media.deleteLocalRows(it)
+                    db.albums().removeMediaEverywhere(it)
+                }
             }
-            db.remote().forget(keys)
+            val versions = keys.chunked(DB_CHUNK).flatMap { db.remote().getByKeys(it) }.map { it.versionId }.distinct()
+            keys.chunked(DB_CHUNK).forEach { db.remote().forget(it) }
+            // An S3-only album member goes with its last object; while another object has the same content it stays.
+            val gone = versions - versions.chunked(DB_CHUNK).flatMap { db.remote().versionsListed(it) }.toSet()
+            gone.chunked(DB_CHUNK).forEach { db.albums().removeRemoteItemsEverywhere(it) }
         }
+    }
+
+    private companion object {
+        /** Errors that are about *when*, not *whether*: worth asking again. Permission, credential and quota errors are not. */
+        val TRANSIENT = setOf(RemoteErrorKind.THROTTLED, RemoteErrorKind.NETWORK, RemoteErrorKind.UNKNOWN)
+        const val MAX_RETRIES = 2
+        const val RETRY_BASE_MS = 500L
     }
 }
 
 /** Checks whether Android still has a file (the only reliable proof that a system deletion really happened). */
 fun interface LocalMediaGateway {
     suspend fun exists(uri: String): Boolean
+
+    /** Which of [uris] Android still has. Gateways that can ask for many at once override this; the default asks one by one. */
+    suspend fun existing(uris: List<String>): Set<String> = uris.filterTo(HashSet()) { exists(it) }
 }
 
 data class LocalDeleteResult(
@@ -171,18 +243,19 @@ class LocalDeletionController(
 ) {
     suspend fun settle(entries: List<DeleteEntry>): LocalDeleteResult {
         val candidates = entries.filter { it.mediaStoreId != null && it.uri != null }
-        val gone = candidates.filter { !gateway.exists(it.uri!!) }
+        val present = gateway.existing(candidates.map { it.uri!! })
+        val gone = candidates.filter { it.uri!! !in present }
         val ids = gone.map { it.mediaStoreId!! }
         var kept = 0
         if (ids.isNotEmpty()) {
             db.withTransaction {
                 val media = db.media()
-                val rows = ids.chunked(400).flatMap { media.getAll(it) }
+                val rows = ids.chunked(DB_CHUNK).flatMap { media.getAll(it) }
                 val withCopy = rows.filter { it.remoteKey != null }.map { it.mediaStoreId }
                 val withoutCopy = rows.filter { it.remoteKey == null }.map { it.mediaStoreId }
                 kept = withCopy.size
-                withCopy.chunked(400).forEach { media.markGoneKeepingRemote(it) }
-                withoutCopy.chunked(400).forEach {
+                withCopy.chunked(DB_CHUNK).forEach { media.markGoneKeepingRemote(it) }
+                withoutCopy.chunked(DB_CHUNK).forEach {
                     media.deleteLocalRows(it)
                     db.albums().removeMediaEverywhere(it)
                 }
@@ -193,3 +266,6 @@ class LocalDeletionController(
         )
     }
 }
+
+/** Older SQLite builds (Android 10/11) allow 999 bound variables per statement. */
+private const val DB_CHUNK = 400

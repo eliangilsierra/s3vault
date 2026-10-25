@@ -24,6 +24,10 @@ interface WorkScheduler {
     fun configureAuto(settings: BackupSettings)
     fun kickRestore(wifiOnly: Boolean)
     fun cancelRestore()
+
+    /** Opt-in pass that reads the capture date of S3 objects that have none (HEAD requests). */
+    fun kickCloudDates(wifiOnly: Boolean)
+    fun cancelCloudDates()
 }
 
 /**
@@ -81,7 +85,20 @@ class WorkManagerScheduler(private val context: Context) : WorkScheduler {
         wm.cancelUniqueWork(RESTORE_WORK)
     }
 
+    override fun kickCloudDates(wifiOnly: Boolean) {
+        val req = OneTimeWorkRequestBuilder<CloudDatesWorker>()
+            .setConstraints(constraints(wifiOnly))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        wm.enqueueUniqueWork(DATES_WORK, ExistingWorkPolicy.KEEP, req)
+    }
+
+    override fun cancelCloudDates() {
+        wm.cancelUniqueWork(DATES_WORK)
+    }
+
     companion object {
+        const val DATES_WORK = "s3vault-cloud-dates"
         const val BACKUP_WORK = "s3vault-backup"
         const val AUTO_WORK = "s3vault-backup-auto"
         const val RESTORE_WORK = "s3vault-restore"
@@ -140,6 +157,24 @@ class RestoreWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             throw e
         } catch (e: Exception) {
             SafeLog.e("RestoreWorker", "Restore worker failed", e)
+            if (runAttemptCount < 8) Result.retry() else Result.failure()
+        }
+    }
+}
+
+class CloudDatesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val c = (applicationContext as S3VaultApp).container
+        return try {
+            when (c.cloudDates.run()) {
+                is DatesOutcome.RetryLater -> if (runAttemptCount < 8) Result.retry() else Result.success()
+                is DatesOutcome.NeedsCredentials -> { c.settings.setNeedsCredentials(true); Result.success() }
+                else -> Result.success()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SafeLog.e("CloudDatesWorker", "Capture date pass failed", e)
             if (runAttemptCount < 8) Result.retry() else Result.failure()
         }
     }

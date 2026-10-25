@@ -43,6 +43,63 @@ class IndexerAndControllersTest {
         assertEquals(before, env.db.media().get(1))
     }
 
+    @Test fun `a scan that finds nothing new is skipped unless forced`() = runBlocking {
+        var scans = 0
+        var mediaVersion = 1L
+        var access = MediaAccess.FULL
+        val repo = LibraryRepository(
+            object : com.s3vault.app.data.local.MediaScanSource {
+                override suspend fun scan() = run { scans++; listOf(env.scanned(1)) }
+            },
+            com.s3vault.app.data.local.MediaIndexer(env.db), { access },
+            changes = object : ChangeSignal { override val version get() = mediaVersion },
+        )
+
+        repo.refresh(force = false)
+        assertEquals("the first one always runs", 1, scans)
+        repo.refresh(force = false)
+        assertEquals("nothing changed since: no scan", 1, scans)
+        repo.refresh(force = true)
+        assertEquals("an explicit refresh always scans", 2, scans)
+
+        mediaVersion++ // MediaStore changed
+        repo.refresh(force = false)
+        assertEquals(3, scans)
+
+        access = MediaAccess.PARTIAL // the permission changed
+        repo.refresh(force = false)
+        assertEquals(4, scans)
+    }
+
+    @Test fun `the thin projection path applies the same changes as before`() = runBlocking {
+        env.index(env.scanned(1), env.scanned(2), env.scanned(3))
+        env.enqueue(1)
+        env.engine().run(1)
+        val backedUpRow = env.db.media().get(1)!!
+        assertEquals(SyncState.BACKED_UP, backedUpRow.syncState)
+
+        // 1 was edited (size and mtime differ), 2 is untouched, 3 was renamed, 4 is new.
+        val r = env.index(env.scanned(1, bytes = "edited-bytes".toByteArray(), mtime = 999), env.scanned(2), env.scanned(3).copy(displayName = "renamed.jpg"), env.scanned(4))
+
+        assertEquals(1, r.added)
+        assertEquals(2, r.updated)
+        assertEquals(1, r.modifiedSinceBackup)
+        assertEquals("an edited backed-up file is queued for a new version, not lost", SyncState.LOCAL_ONLY, env.db.media().get(1)!!.syncState)
+        assertEquals(backedUpRow.remoteKey, env.db.media().get(1)!!.remoteKey)
+        assertEquals("renamed.jpg", env.db.media().get(3)!!.displayName)
+    }
+
+    @Test fun `queueing a large selection is one write per 400 photos and every photo is queued once`() = runBlocking {
+        val ids = (1L..450L).toList()
+        env.index(*ids.map { env.scanned(it) }.toTypedArray())
+        val scheduler = FakeScheduler()
+        val c = BackupController(env.db, AppSettings(env.context), scheduler) { env.now }
+
+        assertEquals(450, c.enqueue(ids))
+        assertEquals(450, env.db.media().queuedCount())
+        assertEquals("already queued: nothing moves twice", 0, c.enqueue(ids))
+    }
+
     @Test fun `deleting a backed up photo locally keeps its remote copy and marks it remote only`() = runBlocking {
         env.index(env.scanned(1), env.scanned(2))
         env.enqueue(1)

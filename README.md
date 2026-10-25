@@ -6,10 +6,12 @@ La aplicación se comunica directamente con la API de Amazon S3 mediante credenc
 
 ## Características
 
-- **Galería local.** Cuadrícula agrupada por día, visor a pantalla completa con zoom, selección múltiple, álbumes virtuales y tema claro, oscuro o del sistema. Funciona sin conexión y sin AWS configurado.
+- **Galería local.** Cuadrícula agrupada por día, mes o año según la **fecha de captura** (con las fotos sin fecha señaladas, nunca con una fecha inventada), visor a pantalla completa con zoom, selección múltiple, álbumes virtuales y tema claro, oscuro o del sistema. Funciona sin conexión y sin AWS configurado.
+- **Buscar, filtrar y ordenar.** En las dos galerías: búsqueda por nombre, año, mes o fecha («marzo 2023», «15/03/2023», «IMG foto»), filtros por fecha, tipo, estado de respaldo/disponibilidad y carpeta, orden por fecha, nombre o tamaño, salto a una fecha, densidad de cuadrícula y, en S3, vista de lista. Probado con 20 000 elementos por galería. La búsqueda en S3 usa **la lista ya descargada** y no envía peticiones; la pantalla lo dice. Ver [docs/smart-gallery.md](docs/smart-gallery.md).
 - **Respaldo en S3.** Manual o automático, con cola persistente, reintentos con retroceso exponencial, pausa y cancelación, restricción a redes no medidas (Wi-Fi), exclusión opcional de vídeos y concurrencia configurable. Se ejecuta con WorkManager y no requiere un servicio en primer plano.
 - **Integridad verificada.** Cada subida envía una suma SHA-256 que S3 valida, y un archivo solo se marca como respaldado tras comprobar con `HEAD` su tamaño y su suma. El ETag nunca se trata como MD5.
-- **Biblioteca remota.** El catálogo se deriva del listado de objetos, sin manifiesto. La restauración se reanuda con `Range`, se verifica contra la suma del contenido y se publica en MediaStore sin sobrescribir archivos existentes.
+- **Biblioteca remota.** El catálogo se deriva del listado de objetos (volcado por páginas a Room), sin manifiesto. La restauración se reanuda con `Range`, se verifica contra la suma del contenido y se publica en MediaStore sin sobrescribir archivos existentes.
+- **Costes estimados.** En Ajustes → Almacenamiento y costes: objetos y datos de tu bucket por clase de almacenamiento, un coste mensual aproximado con precios oficiales de lista, desglose, confianza y límites, y cada cifra etiquetada como medida, estimada o suposición. Es una estimación, no tu factura; no añade peticiones a S3 ni permisos IAM. Ver [docs/cost-estimate.md](docs/cost-estimate.md).
 - **Dos métodos de autenticación.** Credenciales temporales de STS (recomendado) o claves estáticas de un usuario IAM dedicado. Los secretos se cifran con una clave de Android Keystore.
 - **Ver fotos de S3 sin descargarlas.** Al respaldar se sube una miniatura de ~60 KB; la pestaña S3 muestra miniaturas y un visor con zoom que dice honestamente que es una vista previa. Sin miniatura se intenta la incrustada en el JPEG con una lectura `Range`; el original solo se descarga con *Restaurar*. Alternativas y costes en [docs/cloud-previews.md](docs/cloud-previews.md).
 - **Borrado explícito y separado.** «Eliminar del dispositivo» (diálogo del sistema Android) y «Eliminar de S3» (solo con el permiso IAM que tú actives) son acciones distintas, cada una con su confirmación; nunca se borran ambas copias de un solo paso. Quitar una foto de un álbum, cerrar sesión o desinstalar nunca toca S3.
@@ -80,6 +82,7 @@ El modelo de amenazas completo está en [docs/security.md](docs/security.md).
 - El borrado en S3 está **desactivado por defecto** (la política IAM recomendada lo prohíbe); se activa a propósito, ver [docs/iam-policy.md](docs/iam-policy.md#permitir-borrar-desde-la-app-opcional).
 - Las fotos de S3 sin miniatura (respaldadas antes de esta función, ya borradas del teléfono y que no son un JPEG con miniatura EXIF) solo se pueden ver restaurándolas.
 - La interfaz está disponible únicamente en español.
+- La búsqueda y los filtros de la galería de S3 trabajan sobre la lista descargada, no sobre el bucket, y no hay búsqueda por contenido ni por lugar. Los objetos de S3 subidos por otras herramientas no tienen fecha de captura hasta que se lee su metadato (opcional, con coste indicado) y se listan aparte; MediaStore no da el desfase horario de la captura, así que el día es el de la zona actual del dispositivo.
 
 ## Costes
 
@@ -94,6 +97,8 @@ S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamien
 | [docs/aws-setup.md](docs/aws-setup.md) | Bucket, región, prefijo, identidad IAM, credenciales y costes. |
 | [docs/iam-policy.md](docs/iam-policy.md) | Políticas mínimas de identidad y de bucket. |
 | [docs/authentication.md](docs/authentication.md) | Credenciales temporales: opciones evaluadas y comportamiento ante la caducidad. |
+| [docs/cost-estimate.md](docs/cost-estimate.md) | Estimación de costes: metodología, fuente y fecha de los precios, confianza, permisos y límites. |
+| [docs/smart-gallery.md](docs/smart-gallery.md) | Fechas de captura y su origen, búsqueda y filtros (local vs S3), rendimiento y coste en AWS. |
 | [docs/cloud-previews.md](docs/cloud-previews.md) | Vista previa sin descargar y borrado: alternativas, coste, límites y reglas de seguridad. |
 | [docs/security.md](docs/security.md) | Modelo de amenazas y tratamiento de los datos. |
 | [docs/design-system.md](docs/design-system.md) | Dirección visual, tokens, componentes y accesibilidad. |

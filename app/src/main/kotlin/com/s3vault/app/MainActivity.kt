@@ -15,8 +15,10 @@ import com.s3vault.app.presentation.nav.AppRoot
 import com.s3vault.app.presentation.theme.S3VaultTheme
 import com.s3vault.app.presentation.theme.isDarkTheme
 import com.s3vault.app.settings.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,7 +29,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
-                    container.credentials.refreshStatus()
+                    // Decrypting the stored credentials goes through the Android Keystore (a binder call, 50-130 ms in StrictMode).
+                    withContext(Dispatchers.IO) { container.credentials.refreshStatus() }
                     delay(30_000)
                 }
             }
@@ -44,7 +47,10 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose { }
             }
-            S3VaultTheme(theme) { AppRoot(container) }
+            val reducedMotion = com.s3vault.app.presentation.ui.rememberReducedMotion()
+            androidx.compose.runtime.CompositionLocalProvider(com.s3vault.app.presentation.ui.LocalReducedMotion provides reducedMotion) {
+                S3VaultTheme(theme) { AppRoot(container) }
+            }
         }
     }
 }

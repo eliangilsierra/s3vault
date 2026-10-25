@@ -57,6 +57,31 @@ Se aplicó `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, estados de carga 
 - **Visor de fotos de S3.** Mismo lienzo inmersivo que el visor local. Una etiqueta dice qué se está viendo («Vista previa · no es el original», «Miniatura incrustada · muy baja resolución», «Sin vista previa»); los estados de carga, sin vista previa y error ocupan el lugar de la foto, con su acción (*Restaurar (tamaño)*, *Reintentar*).
 - **Componentes nuevos:** `DeleteHost` (hoja, diálogos, progreso y resultado compartidos por Galería, Álbumes, visor y S3), `ZoomableBox` (gesto de zoom compartido), `RemoteThumb`, `RemoteDetailSheet`, `CloudViewerScreen`.
 
+## Galería inteligente: búsqueda, filtros y organización
+
+Misma estructura en las dos galerías (`presentation/library`), para que lo aprendido en una sirva en la otra.
+
+- **Barra superior con tres modos:** normal (título, recuento «N de M» si hay filtros, buscar, ir a fecha, filtros), búsqueda (el campo ocupa la barra y dice qué se busca) y selección. El cambio entre modos es un fundido de 150 ms (0 con animaciones desactivadas).
+- **Chips de lo activo:** una fila bajo la barra con cómo se entendió la búsqueda y cada filtro; cada chip se quita de uno en uno y hay «Borrar todo». Nada filtra sin que se vea.
+- **Barra de vista:** segmentos Día/Mes/Año (desactivados cuando el orden no es por fecha), chip de orden con su resumen en lenguaje llano («Recientes primero») y, a la derecha, densidad y, en S3, lista/cuadrícula.
+- **Hoja de filtros:** solo ofrece lo que el metadato responde; el botón principal anuncia cuántos resultados daría («Mostrar 24 resultados» o «Sin resultados con estos filtros») antes de aplicar. Notas breves donde un filtro tiene límites (S3: el tipo se deduce de la extensión; los objetos sin fecha de captura no entran en filtros de fecha).
+- **Ir a una fecha:** años con meses y recuentos, «Todo 2023» y selector de día exacto; el desplazador rápido del borde muestra la fecha de la sección y solo aparece con listas largas.
+- **Encabezados de sección** con nombre, recuento y, en modo selección, un control para seleccionar toda la sección; el de «Sin fecha de captura» lleva una nota («Ordenadas por fecha de subida»).
+- **Alcance siempre visible en S3:** línea «Lista descargada hace 5 min · N objetos» y, al buscar o filtrar, «Busca solo en los N objetos de la lista descargada. No consulta S3.». Avisos propios para lista incompleta y para error de actualización (con la lista antigua visible). La tarjeta «Completar fechas» enseña el coste antes de pedir confirmación.
+- **Componentes nuevos:** `LibraryGrid`, `SectionHeading`, `TimelineScroller`, `CellSkeleton`, `LibrarySearchBar`, `ActiveChipsRow`, `LibraryViewBar`, `LibraryFilterSheet`, `LibraryTimelineSheet`, `NoResults`.
+
+## Panel de costes estimados
+
+Ajustes → Almacenamiento y costes (`StorageCostScreen`). Misma estructura que el resto de Ajustes (`SettingsScaffold`, `SettingsGroup`, `StatusBanner`, `SectionHeader`).
+
+- **Lo primero es el aviso:** «Es una estimación, no tu factura», con acceso a AWS Billing. No se puede llegar a una cifra sin verlo.
+- **Tarjeta principal:** el importe mensual con `displaySmall`, el nivel de confianza (icono + palabra: *alta*, *media*, *baja*) y una línea que separa lo medido de las suposiciones. Si no hay datos suficientes se dice «No disponible» y por qué, nunca una cifra a medias.
+- **Etiquetas de origen en cada cifra:** *Medido* (sale del bucket), *Estimado* (regla con margen conocido) y *Suposición* (resaltada en ámbar). Icono + palabra, nunca solo color.
+- **Bloques:** frescura (inventario y precios con su antigüedad y el botón «Actualizar inventario» con lo que cuesta), uso medido, desglose mensual por clase, solicitudes del mes («lo que se sabe», fuera del total), «Qué no incluye» (solo lo que aplica a tu bucket) y confianza con sus motivos.
+- **Ayuda en contexto:** el icono de ayuda de la tarjeta abre una hoja inferior con la metodología en lenguaje llano.
+- **Estados:** sin S3, sin inventario, calculando, otro bucket, vacío, sin credenciales (se conserva lo último), error al actualizar (con «Reintentar» o «Ir a credenciales»), inventario o precios antiguos, cambios pendientes, región o clase sin precio.
+- **Importes pequeños:** nunca se muestra «US$ 0,00» para algo que no es cero (se añaden cifras: «US$ 0,0004»); en cifras secundarias, «menos de US$ 0,01».
+
 ## Accesibilidad y movimiento
 
 - Objetivos táctiles de 48 dp; cada celda de la cuadrícula expone nombre, tipo y estado de respaldo, y su estado de selección.

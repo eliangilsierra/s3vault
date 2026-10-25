@@ -7,9 +7,13 @@ import android.net.Uri
 import android.provider.MediaStore
 import com.s3vault.app.domain.LocalFileReader
 import com.s3vault.app.domain.MediaKind
+import com.s3vault.app.domain.library.DateKeys
+import com.s3vault.app.domain.library.DateResolver
+import com.s3vault.app.domain.library.DateSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
+import java.time.ZoneId
 
 /** One row read from MediaStore. */
 data class ScannedMedia(
@@ -24,6 +28,10 @@ data class ScannedMedia(
     val width: Int,
     val height: Int,
     val folderName: String,
+    /** Where [dateTakenMs] comes from (see DateResolver). */
+    val dateSource: DateSource = DateSource.CAPTURE,
+    /** `yyyyMMdd` of [dateTakenMs] in the zone of the scan. */
+    val dayKey: Int = DateKeys.dayKey(dateTakenMs, ZoneId.systemDefault()),
 )
 
 interface MediaScanSource {
@@ -55,6 +63,8 @@ class MediaStoreSource(private val context: Context) : MediaScanSource, LocalFil
             MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
         )
         val out = ArrayList<ScannedMedia>()
+        val zone = ZoneId.systemDefault()
+        val nowMs = System.currentTimeMillis()
         resolver.query(collection, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
             val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val iName = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
@@ -69,19 +79,23 @@ class MediaStoreSource(private val context: Context) : MediaScanSource, LocalFil
             while (c.moveToNext()) {
                 val id = c.getLong(iId)
                 val taken = if (c.isNull(iTaken)) 0L else c.getLong(iTaken)
+                val name = c.getString(iName) ?: "media_$id"
+                // Capture date when MediaStore has a believable one; else the date in the file name; else the file's own dates.
+                val date = DateResolver.local(taken, c.getLong(iMod), c.getLong(iAdded), name, nowMs, zone)
                 out += ScannedMedia(
                     mediaStoreId = idFor(kind, id),
                     uri = ContentUris.withAppendedId(collection, id).toString(),
                     kind = kind,
-                    displayName = c.getString(iName) ?: "media_$id",
+                    displayName = name,
                     mimeType = c.getString(iMime) ?: if (kind == MediaKind.IMAGE) "image/jpeg" else "video/mp4",
                     sizeBytes = c.getLong(iSize),
                     dateModifiedSec = c.getLong(iMod),
-                    // Fall back to date added when the capture date is missing.
-                    dateTakenMs = if (taken > 0) taken else c.getLong(iAdded) * 1000,
+                    dateTakenMs = date.ms,
                     width = if (c.isNull(iW)) 0 else c.getInt(iW),
                     height = if (c.isNull(iH)) 0 else c.getInt(iH),
                     folderName = c.getString(iBucket) ?: "",
+                    dateSource = date.source,
+                    dayKey = DateKeys.dayKey(date.ms, zone),
                 )
             }
         }

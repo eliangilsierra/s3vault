@@ -3,13 +3,8 @@ package com.s3vault.app.presentation
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -263,7 +260,7 @@ private fun DayHeader(day: String, count: Int) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MediaCell(
+internal fun MediaCell(
     item: MediaItem,
     selected: Boolean,
     selectionMode: Boolean,
@@ -274,26 +271,28 @@ private fun MediaCell(
     val ctx = LocalContext.current
     val reduced = rememberReducedMotion()
     val ms = if (reduced) 0 else 160
-    // Selected photos shrink slightly into a tinted mat. graphicsLayer keeps this off the layout pass, so the
-    // thumbnail is never re-decoded or re-measured while the state changes.
-    val scale by animateFloatAsState(if (selected) 0.84f else 1f, tween(ms), label = "cellScale")
-    val corner by animateDpAsState(if (selected) 12.dp else 0.dp, tween(ms), label = "cellCorner")
-    val mat by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        tween(ms), label = "cellMat",
-    )
-    val description = buildString {
-        append(item.displayName)
-        if (item.kind == MediaKind.VIDEO) append(", vídeo")
-        append(", ").append(syncStateLabel(item.syncState))
+    // Two animations drive the whole cell (they used to be four plus an AnimatedVisibility per cell, each with its own
+    // state): how selected it is, and whether the grid is in selection mode. Everything derived from them is read while
+    // drawing, so a toggle animates without recomposing the cell or touching the thumbnail's decode or layout.
+    val picked by animateFloatAsState(if (selected) 1f else 0f, tween(ms), label = "cellPicked")
+    val checkAlpha by animateFloatAsState(if (selectionMode) 1f else 0f, tween(ms), label = "cellCheck")
+    val description = remember(item.displayName, item.kind, item.syncState) {
+        buildString {
+            append(item.displayName)
+            if (item.kind == MediaKind.VIDEO) append(", vídeo")
+            append(", ").append(syncStateLabel(item.syncState))
+        }
     }
-    val primary = MaterialTheme.colorScheme.primary
-    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val scheme = MaterialTheme.colorScheme
+    val primary = scheme.primary
+    val onPrimary = scheme.onPrimary
+    val matIdle = scheme.surfaceContainerHigh
+    val matPicked = scheme.primaryContainer
 
     Box(
         Modifier
             .aspectRatio(1f)
-            .background(mat)
+            .drawBehind { drawRect(lerp(matIdle, matPicked, picked)) }
             .semantics(mergeDescendants = true) {
                 contentDescription = description
                 this.selected = selected
@@ -305,15 +304,17 @@ private fun MediaCell(
                 onLongClick = { onLongClick(item) },
             ),
     ) {
+        // Selected photos shrink slightly into a tinted mat. graphicsLayer keeps this off the layout pass.
         AsyncImage(
-            model = ImageRequest.Builder(ctx).data(item.uri).crossfade(!reduced).build(),
+            model = remember(item.uri, reduced) { ImageRequest.Builder(ctx).data(item.uri).crossfade(!reduced).build() },
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            error = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHigh),
+            error = ColorPainter(scheme.surfaceContainerHigh),
             modifier = Modifier.fillMaxSize().graphicsLayer {
+                val scale = 1f - 0.16f * picked
                 scaleX = scale
                 scaleY = scale
-                shape = RoundedCornerShape(corner)
+                shape = RoundedCornerShape((12.dp * picked).toPx())
                 clip = true
             },
         )
@@ -336,12 +337,10 @@ private fun MediaCell(
                 color = PhotoOverlay.onScrim, trackColor = PhotoOverlay.scrim,
             )
         }
-        AnimatedVisibility(
-            visible = selectionMode, enter = fadeIn(tween(ms)), exit = fadeOut(tween(ms)),
-            modifier = Modifier.align(Alignment.TopStart),
-        ) {
+        if (selectionMode || checkAlpha > 0f) {
             Box(
-                Modifier.padding(Space.s).size(22.dp).clip(CircleShape)
+                Modifier.align(Alignment.TopStart).graphicsLayer { alpha = checkAlpha }
+                    .padding(Space.s).size(22.dp).clip(CircleShape)
                     .background(if (selected) primary else PhotoOverlay.scrim)
                     .border(1.5.dp, if (selected) primary else PhotoOverlay.onScrim, CircleShape),
                 contentAlignment = Alignment.Center,

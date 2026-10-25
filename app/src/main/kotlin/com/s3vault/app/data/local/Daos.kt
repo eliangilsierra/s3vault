@@ -4,12 +4,39 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Transaction
 import androidx.room.Update
 import com.s3vault.app.domain.SyncState
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 data class HashedItem(val mediaStoreId: Long, val contentSha256: String?, val remoteVersionId: String?)
+
+data class RemoteDateRow(val key: String, val effectiveDateMs: Long, val lastModifiedMs: Long, val dateSource: com.s3vault.app.domain.library.DateSource)
+
+data class LocalDateRow(val mediaStoreId: Long, val dateTakenMs: Long)
+
+/** What a library scan needs to know about an indexed row to decide whether it changed. */
+data class IndexRow(
+    val mediaStoreId: Long,
+    val uri: String,
+    val displayName: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val dateModifiedSec: Long,
+    val dateTakenMs: Long,
+    val width: Int,
+    val height: Int,
+    val folderName: String,
+    val present: Boolean,
+    val dayKey: Int,
+    val dateSource: com.s3vault.app.domain.library.DateSource,
+    val syncState: SyncState,
+    val remoteKey: String?,
+    val backedUpSizeBytes: Long?,
+    val backedUpDateModifiedSec: Long?,
+)
 
 @Dao
 interface MediaDao {
@@ -20,8 +47,44 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE present = 1 AND (:includeVideos = 1 OR kind = 'IMAGE') ORDER BY dateTakenMs DESC, mediaStoreId DESC")
     fun observeGallery(includeVideos: Boolean): Flow<List<MediaItemEntity>>
 
+    // ---- Smart gallery: dynamic queries built by LocalLibrarySql (every value bound, never concatenated).
+
+    @RawQuery(observedEntities = [MediaItemEntity::class])
+    fun observeDayCounts(query: SupportSQLiteQuery): Flow<List<DayCount>>
+
+    @RawQuery(observedEntities = [MediaItemEntity::class])
+    fun observeCount(query: SupportSQLiteQuery): Flow<Int>
+
+    @RawQuery
+    suspend fun rows(query: SupportSQLiteQuery): List<MediaItemEntity>
+
+    @RawQuery
+    suspend fun idList(query: SupportSQLiteQuery): List<Long>
+
+    @RawQuery
+    suspend fun countOnce(query: SupportSQLiteQuery): Int
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE present = 1")
+    fun observePresentCount(): Flow<Int>
+
+    /** Photos that sit on the timeline by their file date because no capture date exists. */
+    @Query("SELECT COUNT(*) FROM media_items WHERE present = 1 AND dateSource = 'FALLBACK'")
+    fun observeUndatedCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE mediaStoreId IN (:ids) AND remoteKey IS NOT NULL")
+    suspend fun countWithRemote(ids: List<Long>): Int
+
+    @Query(LocalLibrarySql.FOLDERS)
+    fun observeFolders(): Flow<List<FolderCount>>
+
     @Query("SELECT * FROM media_items WHERE mediaStoreId = :id")
     suspend fun get(id: Long): MediaItemEntity?
+
+    @Query("SELECT mediaStoreId, dateTakenMs FROM media_items")
+    suspend fun datesForZoneChange(): List<LocalDateRow>
+
+    @Query("UPDATE media_items SET dayKey = :day WHERE mediaStoreId = :id")
+    suspend fun setDayKey(id: Long, day: Int)
 
     @Query("SELECT * FROM media_items WHERE mediaStoreId = :id")
     fun observe(id: Long): Flow<MediaItemEntity?>
@@ -31,6 +94,16 @@ interface MediaDao {
 
     @Query("SELECT * FROM media_items")
     suspend fun getEverything(): List<MediaItemEntity>
+
+    /**
+     * Only the columns a library scan compares, so reconciling a large library does not materialise every full row
+     * (see [com.s3vault.app.data.local.MediaIndexer]).
+     */
+    @Query(
+        "SELECT mediaStoreId, uri, displayName, mimeType, sizeBytes, dateModifiedSec, dateTakenMs, width, height, folderName, present, " +
+            "dayKey, dateSource, syncState, remoteKey, backedUpSizeBytes, backedUpDateModifiedSec FROM media_items",
+    )
+    suspend fun indexRows(): List<IndexRow>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<MediaItemEntity>)
@@ -100,6 +173,10 @@ interface MediaDao {
     @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0, backupExcluded = 0 WHERE mediaStoreId = :id AND syncState IN ('LOCAL_ONLY', 'FAILED')")
     suspend fun enqueue(id: Long, nowMs: Long): Int
 
+    /** [enqueue] for many rows in one statement (and so one Room invalidation instead of one per photo). Returns how many moved. */
+    @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0, backupExcluded = 0 WHERE mediaStoreId IN (:ids) AND syncState IN ('LOCAL_ONLY', 'FAILED')")
+    suspend fun enqueueAll(ids: List<Long>, nowMs: Long): Int
+
     @Query("UPDATE media_items SET thumbnailUploaded = 1 WHERE mediaStoreId = :id AND remoteVersionId = :versionId")
     suspend fun markThumbnailUploaded(id: Long, versionId: String)
 
@@ -155,11 +232,78 @@ interface RemoteDao {
     @Query("SELECT * FROM remote_objects WHERE key = :key")
     suspend fun get(key: String): RemoteObjectEntity?
 
+    // ---- Smart gallery over the cached listing (nothing here talks to S3).
+
+    @RawQuery(observedEntities = [RemoteObjectEntity::class, MediaItemEntity::class])
+    fun observeDayCounts(query: SupportSQLiteQuery): Flow<List<DayCount>>
+
+    @RawQuery(observedEntities = [RemoteObjectEntity::class, MediaItemEntity::class])
+    fun observeCount(query: SupportSQLiteQuery): Flow<Int>
+
+    @RawQuery
+    suspend fun rows(query: SupportSQLiteQuery): List<RemoteObjectEntity>
+
+    @RawQuery
+    suspend fun keyList(query: SupportSQLiteQuery): List<String>
+
+    @RawQuery
+    suspend fun countOnce(query: SupportSQLiteQuery): Int
+
+    @Query("SELECT COUNT(*) FROM remote_objects")
+    fun observeObjectCount(): Flow<Int>
+
+    /** Objects listed apart because they have no capture date. */
+    @Query("SELECT COUNT(*) FROM remote_objects WHERE dayKey = 0")
+    fun observeUndatedCount(): Flow<Int>
+
     @Query("SELECT * FROM remote_objects")
     suspend fun getAll(): List<RemoteObjectEntity>
 
+    @Query("SELECT `key` FROM remote_objects")
+    suspend fun allKeys(): List<String>
+
+    /**
+     * Objects backed by a local file that has a real capture date take it from there: free, exact and without a request.
+     * Objects whose date is already a capture date are left alone.
+     */
+    @Query(
+        "UPDATE remote_objects SET " +
+            "effectiveDateMs = (SELECT m.dateTakenMs FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE' LIMIT 1), " +
+            "dayKey = (SELECT m.dayKey FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE' LIMIT 1), " +
+            "dateSource = 'CAPTURE', metaChecked = 1 " +
+            "WHERE dateSource != 'CAPTURE' AND EXISTS (SELECT 1 FROM media_items m WHERE m.remoteKey = remote_objects.`key` AND m.dateSource = 'CAPTURE')",
+    )
+    suspend fun applyLocalCaptureDates(): Int
+
+    /** Objects whose date is not a capture date and whose metadata was never asked for: the candidates of the opt-in HEAD pass. */
+    @Query("SELECT * FROM remote_objects WHERE dateSource != 'CAPTURE' AND metaChecked = 0 LIMIT :limit")
+    suspend fun pendingMeta(limit: Int): List<RemoteObjectEntity>
+
+    @Query("SELECT COUNT(*) FROM remote_objects WHERE dateSource != 'CAPTURE' AND metaChecked = 0")
+    fun observePendingMetaCount(): Flow<Int>
+
+    @Query("UPDATE remote_objects SET effectiveDateMs = :ms, dateSource = 'CAPTURE', dayKey = :day, metaChecked = 1 WHERE `key` = :key")
+    suspend fun applyCapture(key: String, ms: Long, day: Int)
+
+    @Query("UPDATE remote_objects SET metaChecked = 1 WHERE `key` = :key")
+    suspend fun markMetaChecked(key: String)
+
+    /** Rewrites the day keys after the device time zone changed. Capture dates only: an unknown date has no key. */
+    @Query("UPDATE remote_objects SET dayKey = :day WHERE `key` = :key")
+    suspend fun setDayKey(key: String, day: Int)
+
+    @Query("UPDATE remote_objects SET uploadDayKey = :day WHERE `key` = :key")
+    suspend fun setUploadDayKey(key: String, day: Int)
+
+    @Query("SELECT `key`, effectiveDateMs, lastModifiedMs, dateSource FROM remote_objects")
+    suspend fun datesForZoneChange(): List<RemoteDateRow>
+
     @Query("SELECT * FROM remote_objects WHERE key IN (:keys)")
     suspend fun getByKeys(keys: List<String>): List<RemoteObjectEntity>
+
+    /** Which of these versions (content hashes) have an object in the cached listing. */
+    @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds)")
+    suspend fun versionsListed(versionIds: List<String>): List<String>
 
     /** Versions (content hashes) that some object outside [excludedKeys] still uses, so their shared preview must stay. */
     @Query("SELECT DISTINCT versionId FROM remote_objects WHERE versionId IN (:versionIds) AND key NOT IN (:excludedKeys)")
@@ -177,6 +321,20 @@ interface RemoteDao {
     @Query("UPDATE remote_objects SET state = :to, lastError = :error WHERE key = :key AND state = :from")
     suspend fun transition(key: String, from: SyncState, to: SyncState, error: String?): Int
 
+    /** [transition] for many objects in one statement. */
+    @Query("UPDATE remote_objects SET state = :to, lastError = :error WHERE key IN (:keys) AND state = :from")
+    suspend fun transitionAll(keys: List<String>, from: SyncState, to: SyncState, error: String?): Int
+
+    /**
+     * How many of these objects also exist on this device: a present local file linked to the key, or a restored copy.
+     * Answers the selection bar with one COUNT instead of reading every selected row.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM remote_objects r WHERE r.`key` IN (:keys) AND (r.restoredUri IS NOT NULL OR " +
+            "EXISTS (SELECT 1 FROM media_items m WHERE m.remoteKey = r.`key` AND m.present = 1))",
+    )
+    suspend fun countAvailableLocally(keys: List<String>): Int
+
     @Query("UPDATE remote_objects SET restoredUri = :uri, state = 'REMOTE_ONLY', lastError = NULL WHERE key = :key")
     suspend fun markRestored(key: String, uri: String)
 
@@ -187,17 +345,33 @@ interface RemoteDao {
     suspend fun clear()
 }
 
+/**
+ * S3-only members of an album that count and show: the photo is in the cached listing, and the album has no copy of it on
+ * this device (that copy is the member then, so the photo is never listed twice).
+ */
+private const val VISIBLE_CLOUD_MEMBERS =
+    "FROM album_remote_items ri WHERE ri.albumId = a.id " +
+        "AND EXISTS (SELECT 1 FROM remote_objects r WHERE r.versionId = ri.versionId) " +
+        "AND NOT EXISTS (SELECT 1 FROM album_items li JOIN media_items lm ON lm.mediaStoreId = li.mediaStoreId " +
+        "WHERE li.albumId = ri.albumId AND lm.present = 1 AND (lm.contentSha256 = ri.versionId OR lm.remoteVersionId = ri.versionId))"
+
+private const val ALBUM_ITEM_COUNT =
+    "((SELECT COUNT(*) FROM album_items ai JOIN media_items m ON m.mediaStoreId = ai.mediaStoreId " +
+        "WHERE ai.albumId = a.id AND m.present = 1) + (SELECT COUNT(*) " + VISIBLE_CLOUD_MEMBERS + "))"
+
 @Dao
 interface AlbumDao {
     @Query(
-        "SELECT a.id AS id, a.name AS name, COUNT(m.mediaStoreId) AS itemCount, " +
+        "SELECT a.id AS id, a.name AS name, " + ALBUM_ITEM_COUNT + " AS itemCount, " +
             "(SELECT m2.mediaStoreId FROM album_items ai2 JOIN media_items m2 ON m2.mediaStoreId = ai2.mediaStoreId " +
             " WHERE ai2.albumId = a.id AND m2.present = 1 ORDER BY ai2.addedAtMs DESC LIMIT 1) AS coverMediaStoreId, " +
             "(SELECT m3.uri FROM album_items ai3 JOIN media_items m3 ON m3.mediaStoreId = ai3.mediaStoreId " +
-            " WHERE ai3.albumId = a.id AND m3.present = 1 ORDER BY ai3.addedAtMs DESC LIMIT 1) AS coverUri " +
-            "FROM albums a LEFT JOIN album_items ai ON ai.albumId = a.id " +
-            "LEFT JOIN media_items m ON m.mediaStoreId = ai.mediaStoreId AND m.present = 1 " +
-            "GROUP BY a.id ORDER BY a.name COLLATE NOCASE",
+            " WHERE ai3.albumId = a.id AND m3.present = 1 ORDER BY ai3.addedAtMs DESC LIMIT 1) AS coverUri, " +
+            "(SELECT MIN(r3.`key`) FROM remote_objects r3 WHERE r3.versionId = " +
+            " (SELECT ri3.versionId FROM album_remote_items ri3 WHERE ri3.albumId = a.id " +
+            "  AND EXISTS (SELECT 1 FROM remote_objects r4 WHERE r4.versionId = ri3.versionId) " +
+            "  ORDER BY ri3.addedAtMs DESC, ri3.versionId LIMIT 1)) AS coverRemoteKey " +
+            "FROM albums a ORDER BY a.name COLLATE NOCASE",
     )
     fun observeAlbums(): Flow<List<AlbumRow>>
 
@@ -237,6 +411,32 @@ interface AlbumDao {
 
     @Query("DELETE FROM album_items WHERE mediaStoreId IN (:ids)")
     suspend fun removeMediaEverywhere(ids: List<Long>)
+
+    // ---- Photos that exist only in S3.
+
+    /** One object per version, newest first, for the S3-only part of an album (same rule as [VISIBLE_CLOUD_MEMBERS]). */
+    @Query(
+        "SELECT r.* FROM remote_objects r JOIN album_remote_items ri ON ri.versionId = r.versionId " +
+            "WHERE ri.albumId = :albumId " +
+            "AND r.`key` = (SELECT MIN(r2.`key`) FROM remote_objects r2 WHERE r2.versionId = r.versionId) " +
+            "AND NOT EXISTS (SELECT 1 FROM album_items li JOIN media_items lm ON lm.mediaStoreId = li.mediaStoreId " +
+            "WHERE li.albumId = ri.albumId AND lm.present = 1 AND (lm.contentSha256 = ri.versionId OR lm.remoteVersionId = ri.versionId)) " +
+            "ORDER BY r.effectiveDateMs DESC, r.`key`",
+    )
+    fun observeAlbumCloud(albumId: Long): Flow<List<RemoteObjectEntity>>
+
+    @Query("SELECT versionId FROM album_remote_items WHERE albumId = :albumId")
+    suspend fun cloudMemberVersions(albumId: Long): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addRemoteItems(items: List<AlbumRemoteItemEntity>)
+
+    @Query("DELETE FROM album_remote_items WHERE albumId = :albumId AND versionId IN (:versionIds)")
+    suspend fun removeRemoteItems(albumId: Long, versionIds: List<String>)
+
+    /** The S3 photo was deleted on purpose: no album keeps a pointer to it. */
+    @Query("DELETE FROM album_remote_items WHERE versionId IN (:versionIds)")
+    suspend fun removeRemoteItemsEverywhere(versionIds: List<String>)
 }
 
 @Dao
@@ -246,6 +446,13 @@ interface EventDao {
 
     @Insert
     suspend fun insert(e: TransferEventEntity)
+
+    @Query("SELECT COUNT(*) FROM transfer_events WHERE type = 'UPLOADED' AND timestampMs > :sinceMs")
+    fun observeUploadsSince(sinceMs: Long): Flow<Int>
+
+    /** Objects deleted from S3 since [sinceMs]; each event is named "N elementos", and SQLite reads the leading number. */
+    @Query("SELECT COALESCE(SUM(CAST(name AS INTEGER)), 0) FROM transfer_events WHERE type = 'CLOUD_DELETED' AND timestampMs > :sinceMs")
+    fun observeCloudDeletionsSince(sinceMs: Long): Flow<Int>
 
     @Query("DELETE FROM transfer_events WHERE id NOT IN (SELECT id FROM transfer_events ORDER BY timestampMs DESC, id DESC LIMIT :keep)")
     suspend fun trim(keep: Int)

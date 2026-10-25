@@ -18,6 +18,7 @@ Sustituye estos marcadores en todos los ejemplos:
 | Subir fotos y el objeto de prueba | `s3:PutObject` | `arn:aws:s3:::BUCKET_NAME/PREFIX/*` (recurso de **objetos**) |
 | Verificar (`HEAD`), restaurar, probar permisos | `s3:GetObject` | `arn:aws:s3:::BUCKET_NAME/PREFIX/*` |
 | Subir y leer las miniaturas (`PREFIX/.s3vault/thumbs/…`) y la cabecera de un JPEG con `Range` | `s3:PutObject`, `s3:GetObject` | Ya cubiertos por `arn:aws:s3:::BUCKET_NAME/PREFIX/*`: **no hacen falta permisos nuevos** |
+| Estimar el coste mensual (Ajustes → Almacenamiento y costes) | `s3:ListBucket` | El mismo listado de `PREFIX/photos/` de arriba: **no hace falta ningún permiso nuevo** ([cost-estimate.md](cost-estimate.md)) |
 | «Eliminar de S3» (**opcional**) | `s3:DeleteObject` (también para `DeleteObjects`) | Solo `…/PREFIX/photos/*` y `…/PREFIX/.s3vault/thumbs/*` |
 
 Distinción clave: `ListBucket` se concede sobre el ARN del *bucket*; `PutObject`/`GetObject` sobre ARN de *objetos* (`.../*`). Mezclarlos es el error de configuración más común.

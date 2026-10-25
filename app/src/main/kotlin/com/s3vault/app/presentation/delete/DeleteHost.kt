@@ -4,16 +4,20 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -43,7 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +57,7 @@ import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.theme.status
 import com.s3vault.app.presentation.ui.QuietButton
 import com.s3vault.app.presentation.ui.SlimProgress
+import com.s3vault.app.presentation.ui.rememberReducedMotion
 import com.s3vault.app.sync.DeleteImpact
 
 private fun items(n: Int) = if (n == 1) "1 elemento" else "$n elementos"
@@ -97,10 +104,19 @@ fun DeleteHost(
         is DeleteUiState.Choose -> ChooseSheet(s.impact, vm::chooseDevice, vm::chooseCloud, vm::dismiss)
         is DeleteUiState.ConfirmDevice -> ConfirmDeviceDialog(s.impact, vm::confirmDevice, vm::dismiss)
         is DeleteUiState.ConfirmCloud -> ConfirmCloudDialog(s.impact, s.bucket, vm::confirmCloud, vm::dismiss)
-        is DeleteUiState.Working -> WorkingDialog(s, vm::cancelWork)
+        is DeleteUiState.Working -> Unit // drawn below as a bar: the screen underneath stays usable
         is DeleteUiState.CloudFailed -> FailedDialog(s, vm::retryCloud, vm::dismiss, onOpenCredentials)
     }
+    if (s is DeleteUiState.Working) {
+        // Not a modal: this Box has no pointer handling, so touches outside the bar reach the screen below it.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            OperationBar(s, vm::cancelWork, Modifier.navigationBarsPadding().padding(bottom = BarLift))
+        }
+    }
 }
+
+/** Keeps the bar clear of the snackbar lane, where the result of the operation appears when it ends. */
+private val BarLift = 64.dp
 
 // ------------------------------------------------------------------ choose
 
@@ -273,26 +289,42 @@ private fun WarningLine(text: String) {
 
 // ------------------------------------------------------------------ progress and failures
 
+/**
+ * Progress of a deletion as a slim card over the content. It says what is being done and to how many items; the bar is
+ * indeterminate until the first real progress report arrives (nothing is shown as done before it is), and Cancel is
+ * offered whenever stopping is safe. The screen underneath keeps scrolling and selecting.
+ */
 @Composable
-private fun WorkingDialog(s: DeleteUiState.Working, onCancel: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = {},
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(s.message, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
-                SlimProgress(if (s.total > 0) s.done.toFloat() / s.total else null)
-                if (s.total > 0) {
-                    Text(
-                        "${s.done} de ${s.total}", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+private fun OperationBar(s: DeleteUiState.Working, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    val reduced = rememberReducedMotion()
+    val target = if (s.total > 0 && s.done > 0) (s.done.toFloat() / s.total).coerceIn(0f, 1f) else null
+    val animated by animateFloatAsState(target ?: 0f, tween(if (reduced) 0 else 200), label = "operationProgress")
+    Surface(
+        modifier = modifier.padding(horizontal = Space.screen).fillMaxWidth().widthIn(max = Space.maxContent),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 6.dp,
+    ) {
+        Column(
+            Modifier.padding(start = Space.l, end = Space.s, top = Space.m, bottom = Space.m)
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+            verticalArrangement = Arrangement.spacedBy(Space.s),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(s.message, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                    if (s.total > 0) {
+                        Text(
+                            "${s.done} de ${s.total}", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+                if (s.cancellable) QuietButton("Cancelar", onCancel)
             }
-        },
-        confirmButton = { if (s.cancellable) QuietButton("Cancelar", onCancel) },
-    )
+            SlimProgress(if (target == null) null else animated, Modifier.padding(end = Space.m))
+        }
+    }
 }
 
 @Composable

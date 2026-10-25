@@ -56,9 +56,8 @@ Con la regla de ciclo de vida del usuario (`photos/` → `GLACIER_IR` a los 30 d
 ### Supuestos y precios
 
 - Tamaño de miniatura 60 KB: estimación para JPEG de 720 px con calidad 78; depende de la foto. Comprueba el tuyo con `aws s3 ls --recursive s3://BUCKET/PREFIX/.s3vault/thumbs/ --summarize`.
-- **Verificado en la página oficial de precios y en la documentación de clases de almacenamiento:** `GET` Standard 0,0004 $/1000; `DELETE` gratuito; 100 GB/mes de salida gratuitos; `GLACIER_IR` con mínimo de 90 días, 128 KB facturables mínimos y cargo de retrieval por GB.
-- **Verificado solo en fuentes de terceros:** almacenamiento Standard 0,023 $/GB·mes, `PUT` 0,005 $/1000, `GLACIER_IR` 0,004 $/GB·mes.
-- **No verificado (cifras de memoria; contrástalas en [la tabla oficial](https://aws.amazon.com/s3/pricing/)):** retrieval de `GLACIER_IR` 0,03 $/GB y `GET` de `GLACIER_IR` 0,01 $/1000. Solo afectan a la comparación con el respaldo B y con la alternativa A.
+- **Todas las cifras de `us-east-1` están verificadas** contra la lista de precios oficial de AWS (AWS Price List Bulk API, publicada el 2026-10-15; ver [cost-estimate.md](cost-estimate.md#precios-fuente-fecha-y-actualización)): Standard 0,023 $/GB·mes, `PUT` 0,005 $/1000, `GET` 0,0004 $/1000, `GLACIER_IR` 0,004 $/GB·mes, retrieval de `GLACIER_IR` 0,03 $/GB y `GET` de `GLACIER_IR` 0,01 $/1000.
+- Verificados en la página de precios y en la documentación de clases de almacenamiento: `DELETE` gratuito, 100 GB/mes de salida gratuitos y `GLACIER_IR` con mínimo de 90 días y 128 KB facturables mínimos.
 - No se incluyen impuestos, otras regiones ni tarifas de salida por encima de los 100 GB/mes.
 
 ## Borrado: reglas de seguridad

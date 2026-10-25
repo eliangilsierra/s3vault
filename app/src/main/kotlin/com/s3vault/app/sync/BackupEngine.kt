@@ -75,7 +75,8 @@ class BackupEngine(
         }
 
         try {
-            catalog.refresh(ctx) // one LIST sweep per run; enables cross-install de-duplication
+            // Needed to link content that is already in S3 instead of uploading it again. Skipped when the list is only minutes old.
+            catalog.refreshIfStale(ctx, LISTING_MAX_AGE_MS)
         } catch (e: RemoteException) {
             classifyRunLevel(e)?.let { return it }
         }
@@ -177,7 +178,7 @@ class BackupEngine(
             val meta = headOrNull(ctx, existingKey)
             if (meta != null && verify(meta, size, hash, requireChecksum = false)) {
                 toVerifying(id)
-                finishBackup(item, existingKey, versionId, size)
+                finishBackup(ctx, item, existingKey, versionId, size)
                 uploadPreview(ctx, item, versionId)
                 return ItemResult.AlreadyBackedUp
             }
@@ -205,7 +206,7 @@ class BackupEngine(
         toVerifying(id)
         val meta = ctx.storage.head(key) ?: throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "object missing after upload")
         if (!verify(meta, size, hash, requireChecksum = true)) throw RemoteException(RemoteErrorKind.INTEGRITY_MISMATCH, detail = "size/checksum")
-        finishBackup(item, key, versionId, size)
+        finishBackup(ctx, item, key, versionId, size)
         uploadPreview(ctx, item, versionId)
         return ItemResult.Uploaded
     }
@@ -293,12 +294,14 @@ class BackupEngine(
         media.transition(id, SyncState.UPLOADING, SyncState.VERIFYING, null, false, nowMs())
     }
 
-    private suspend fun finishBackup(item: MediaItemEntity, key: String, versionId: String, size: Long) {
+    private suspend fun finishBackup(ctx: RemoteContext, item: MediaItemEntity, key: String, versionId: String, size: Long) {
         SyncStateMachine.require(SyncState.VERIFYING, SyncState.BACKED_UP)
         val now = nowMs()
         // Signature of the bytes that were actually backed up = the current (size, mtime) at hash time.
         val ok = media.markBackedUp(item.mediaStoreId, key, versionId, now, item.sizeBytes.takeIf { it > 0 } ?: size, item.dateModifiedSec)
         if (ok > 0) {
+            // The S3 library shows the new object at once, with the capture date of the file, without listing the bucket again.
+            catalog.recordUpload(ctx, key, size, item)
             events.log(TransferEventType.UPLOADED, item.displayName)
             onTransferSuccess(now)
         }
@@ -356,6 +359,7 @@ class BackupEngine(
     companion object {
         const val DEFAULT_MAX_ATTEMPTS = 6
         const val DEFAULT_BACKFILL_LIMIT = 300
+        const val LISTING_MAX_AGE_MS = 10L * 60 * 1000
         private const val TAG = "BackupEngine"
         /** Simple PutObject limit is 5 GiB; multipart is out of scope for this version. */
         const val MAX_SINGLE_PUT_BYTES = 4L * 1024 * 1024 * 1024

@@ -60,8 +60,10 @@ import com.s3vault.app.presentation.AlbumsViewModel
 import com.s3vault.app.presentation.AppViewModelFactory
 import com.s3vault.app.presentation.BackupViewModel
 import com.s3vault.app.presentation.GalleryViewModel
+import com.s3vault.app.presentation.LibraryViewerViewModel
 import com.s3vault.app.presentation.GeneralSettingsViewModel
 import com.s3vault.app.presentation.LoadingBox
+import com.s3vault.app.presentation.CloudViewerViewModel
 import com.s3vault.app.presentation.RemoteViewModel
 import com.s3vault.app.presentation.S3SettingsViewModel
 import com.s3vault.app.presentation.SecurityViewModel
@@ -76,6 +78,9 @@ import com.s3vault.app.presentation.settings.GeneralSettingsScreen
 import com.s3vault.app.presentation.settings.S3SettingsScreen
 import com.s3vault.app.presentation.settings.SecurityScreen
 import com.s3vault.app.presentation.settings.SettingsHome
+import com.s3vault.app.presentation.settings.StorageCostScreen
+import com.s3vault.app.presentation.settings.StorageCostViewModel
+import com.s3vault.app.presentation.settings.summaryLine
 import com.s3vault.app.presentation.viewer.ViewerScreen
 import kotlinx.coroutines.launch
 
@@ -91,7 +96,7 @@ private val TabRoutes = Tab.entries.map { it.route }.toSet()
 
 private const val VIEWER = "viewer/{source}/{id}"
 private const val ALBUM = "album/{id}"
-private const val CLOUD = "cloud/{key}"
+private const val CLOUD = "cloud/{key}?album={album}"
 
 @Composable
 fun AppRoot(container: AppContainer) {
@@ -181,6 +186,7 @@ fun AppRoot(container: AppContainer) {
                 AlbumDetailScreen(
                     vm, deleteVm, id, onBack = { nav.popBackStack() },
                     onOpen = { mid -> nav.navigate("viewer/album-$id/$mid") },
+                    onOpenCloud = { obj -> nav.navigate("cloud/" + android.net.Uri.encode(obj.key) + "?album=$id") },
                     onOpenCredentials = { nav.navigate("settings/security") },
                 )
             }
@@ -198,20 +204,43 @@ fun AppRoot(container: AppContainer) {
                     onOpenPhoto = { obj -> nav.navigate("cloud/" + android.net.Uri.encode(obj.key)) },
                 )
             }
-            composable(CLOUD, listOf(navArgument("key") { type = NavType.StringType })) { e ->
+            composable(
+                CLOUD,
+                listOf(
+                    navArgument("key") { type = NavType.StringType },
+                    navArgument("album") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) { e ->
                 val vm: RemoteViewModel = viewModel(factory = factory)
                 val deleteVm: DeleteViewModel = viewModel(factory = factory)
-                val items = vm.state.collectAsStateWithLifecycle().value.items
-                if (items.isEmpty()) LoadingBox() else CloudViewerScreen(
-                    items = items, startKey = e.arguments!!.getString("key")!!, vm = vm, deleteVm = deleteVm,
+                val viewerVm: CloudViewerViewModel = viewModel(factory = factory)
+                val startKey = e.arguments!!.getString("key")!!
+                val fromAlbum = e.arguments!!.getLong("album")
+                androidx.compose.runtime.LaunchedEffect(startKey, fromAlbum) {
+                    if (fromAlbum >= 0) viewerVm.openAlbum(fromAlbum, startKey) else viewerVm.open(startKey)
+                }
+                val data = viewerVm.data.collectAsStateWithLifecycle().value
+                if (data == null) LoadingBox() else CloudViewerScreen(
+                    items = data.source, startIndex = data.startIndex, vm = vm, deleteVm = deleteVm,
                     onBack = { nav.popBackStack() }, onOpenCredentials = { nav.navigate("settings/security") },
                 )
             }
             composable(Tab.Settings.route) {
+                val costVm: StorageCostViewModel = viewModel(factory = factory)
+                val cost by costVm.state.collectAsStateWithLifecycle()
                 SettingsHome(
                     onS3 = { nav.navigate("settings/s3") },
                     onSecurity = { nav.navigate("settings/security") },
                     onGeneral = { nav.navigate("settings/general") },
+                    onCosts = { nav.navigate("settings/costs") },
+                    costSummary = cost.summaryLine(),
+                )
+            }
+            composable("settings/costs") {
+                val vm: StorageCostViewModel = viewModel(factory = factory)
+                StorageCostScreen(
+                    vm, onBack = { nav.popBackStack() },
+                    onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenSecurity = { nav.navigate("settings/security") },
                 )
             }
             composable("settings/s3") {
@@ -234,16 +263,25 @@ fun AppRoot(container: AppContainer) {
                 val source = e.arguments!!.getString("source")!!
                 val startId = e.arguments!!.getLong("id")
                 val scope = rememberCoroutineScope()
-                val items: List<MediaItem>? = if (source == "all") {
-                    val vm: GalleryViewModel = viewModel(factory = factory)
-                    vm.state.collectAsStateWithLifecycle().value.items
+                // "all" is the gallery as the user left it (search, filters, order): a window over the same query.
+                // An album is small, so it is a plain list.
+                val data: com.s3vault.app.presentation.library.ItemSource<MediaItem>?
+                val startIndex: Int
+                if (source == "all") {
+                    val viewerVm: LibraryViewerViewModel = viewModel(factory = factory)
+                    androidx.compose.runtime.LaunchedEffect(startId) { viewerVm.open(startId) }
+                    val d = viewerVm.data.collectAsStateWithLifecycle().value
+                    data = d?.source
+                    startIndex = d?.startIndex ?: 0
                 } else {
                     val vm: AlbumsViewModel = viewModel(factory = factory)
                     val albumId = source.removePrefix("album-").toLong()
-                    androidx.compose.runtime.remember(albumId) { vm.albumMedia(albumId) }.collectAsStateWithLifecycle(initialValue = null).value
+                    val list = androidx.compose.runtime.remember(albumId) { vm.albumMedia(albumId) }.collectAsStateWithLifecycle(initialValue = null).value
+                    data = list?.let { com.s3vault.app.presentation.library.ListSource(it) }
+                    startIndex = list?.indexOfFirst { it.mediaStoreId == startId }?.coerceAtLeast(0) ?: 0
                 }
-                if (items == null) LoadingBox() else ViewerScreen(
-                    items = items, startId = startId,
+                if (data == null) LoadingBox() else ViewerScreen(
+                    items = data, startIndex = startIndex,
                     onBack = { nav.popBackStack() },
                     deleteVm = deleteVm,
                     onOpenCredentials = { nav.navigate("settings/security") },

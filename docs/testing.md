@@ -4,10 +4,10 @@
 
 | Suite | Comando | Resultado |
 |---|---|---|
-| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **168 pruebas, 0 fallos** |
-| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **34 pruebas, 0 fallos** |
-| Lint | `./gradlew lintDebug` | 0 errores, 37 avisos (versiones/estilo) |
-| Build release con R8 | `./gradlew assembleRelease` | OK (≈ 4,9 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
+| Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **333 pruebas, 0 fallos** |
+| Instrumentadas (emulador Android 17 / API 37, x86_64) | `./gradlew connectedDebugAndroidTest` | **54 pruebas, 0 fallos** |
+| Lint | `./gradlew lintDebug` | 0 errores, 38 avisos (versiones/estilo) |
+| Build release con R8 | `./gradlew assembleRelease` | OK (≈ 5,7 MB); arranca y navega sin fallos en el emulador (firmada con la clave de depuración) |
 
 Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pasado sin haberse ejecutado. Lo que **no** se ha podido ejecutar está en [Validación manual pendiente](#validación-manual-pendiente).
 
@@ -38,8 +38,15 @@ Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pas
 | Vista previa sin descargar | `RemotePreviewRepositoryTest` (orden miniatura → EXIF con `Range` → «no disponible»; caché y fallos cacheados con caducidad; errores transitorios no se cachean; `403` = sin miniatura; objeto borrado en otro sitio = «no existe»; presupuesto de caché), e2e: el original **no** se pide (`getKeys`), una lectura `Range` de 128 KiB lee una miniatura EXIF real |
 | Borrado en S3 | `CloudDeletionTest` (objeto + miniatura, local intacto y marcado, no re-sube, miniatura compartida, fallos por clave y reintento, denegación IAM detiene los lotes, restauración en curso, claves no permitidas, cancelación entre lotes, progreso), `S3RemoteStorageTest` (`POST ?delete` real contra el SDK: XML, `Quiet`, errores por clave, rechazo sin enviar nada), e2e con `DeleteObjects` real sobre ART |
 | Borrado local | `LocalDeletionTest` (lo que Android borró de verdad se asienta; cancelar no cambia nada; parcial; S3 intacta), e2e con MediaStore real, `PhotoManagementUiTest` con el **diálogo real del sistema** |
-| Migración de Room | `MigrationTest` (v1 → v2 desde el esquema exportado, valida Room al abrir) |
-| Flujos de UI | `PhotoManagementUiTest`: selección → «¿qué copia?» → confirmación → progreso → resultado; casilla obligatoria si solo existe en S3; IAM sin permiso explicada y reintento; biblioteca de S3 con miniaturas y visor |
+| Estimación de costes | `CostEstimatorTest` (tramos de Standard, GiB y no GB, mínimo de 128 KiB, sobrecarga de Glacier, Intelligent-Tiering, **sin total** con clase sin precio / región sin precios / inventario incompleto, vistas previas como suposición, niveles de confianza, solicitudes), `S3PricingTableTest` (cifras publicadas, las 36 regiones completas y con tramos coherentes), `StorageInventoryTest`, `InventoryCodecTest`, `CostFormatTest`, `CostPersistenceTest` (el listado que ya se hace alimenta el inventario; un fallo no lo guarda; DataStore; eventos de subida y borrado), `S3RemoteStorageTest` (clase de almacenamiento, número de solicitudes, fallo a mitad de listado) |
+| Pantalla de costes | `StorageCostUiTest` (12 flujos sobre la app real: sin inventario, cálculo, bucket vacío, clase sin precio, región sin precios, fallo que conserva lo anterior, cambios pendientes, inventario antiguo, otro bucket, sin S3, sin credenciales, ayuda) |
+| Migración de Room | `MigrationTest` (v1 → v2 y v2 → v3 desde el esquema exportado: conserva filas, calcula `dayKey` en la zona del dispositivo, deja las fechas de S3 sin captura en 0; valida Room al abrir) |
+| Fechas y búsqueda | `LibraryDomainTest` (origen de la fecha, rango 1990–hoy+2 días, nombres con fecha, claves de día con horario de verano, analizador de búsqueda en español y chips quitables, filtros y agrupación), `LibraryDatesTest` (escaneo local, listado de S3, fecha de captura que sube de la copia local, zona que cambia, «Completar fechas» una vez por objeto, coste), `LibrarySqlTest` (cada consulta de ambas galerías sobre Room: búsqueda, filtros, orden estable, posiciones, recuentos por día, caracteres `%` y `_` del nombre) |
+| Motor de la galería | `LibraryEngineTest` (disposición de secciones y aritmética de índices, ventana paginada con LRU e invalidación, navegador con consulta que cambia y estabilización) |
+| Listado en streaming | `LibraryDatesTest` y `CostPersistenceTest` (páginas escritas según llegan; un fallo a mitad conserva lo escrito, no purga y marca la lista como incompleta; el inventario sale solo de un listado completo; el respaldo reutiliza un listado de pocos minutos; una subida aparece al instante sin listar) |
+| Rendimiento | `LibraryPerformanceTest` (20 000 elementos por galería en el emulador: página inicial, página profunda, recuentos por día, búsqueda, filtros y otros órdenes, con cotas generosas; el plan de la consulta por defecto usa el índice y no ordena la tabla) |
+| Galería inteligente (UI) | `SmartGalleryUiTest` (secciones por día/mes/año, búsqueda «sg_ marzo 2023», sin resultados, filtro de fecha estimada, orden por nombre, salto a un año en una biblioteca larga, selección de sección; S3: lista descargada, alcance de la búsqueda, **cero peticiones a S3 al buscar/filtrar**, objeto subido desde fuera que solo aparece tras actualizar, vista de lista) |
+| Flujos de UI | `PhotoManagementUiTest` (sobre la cuadrícula nueva de S3): selección → «¿qué copia?» → confirmación → progreso → resultado; casilla obligatoria si solo existe en S3; IAM sin permiso explicada y reintento; biblioteca de S3 con miniaturas y visor |
 
 ### Tipos de prueba
 
@@ -61,6 +68,14 @@ Informes: `app/build/reports/tests/`, `app/build/outputs/androidTest-results/`.
 
 Emulador: cualquier imagen API 29+ vale. Usa Espresso 3.7.0 (ya fijado): versiones anteriores fallan en Android 17 por una API oculta eliminada. Si tu SDK no trae `cmdline-tools` (sin `avdmanager`) puedes crear el AVD a mano con `config.ini` apuntando a la imagen instalada. Los tests de UI limpian credenciales y configuración antes de cada caso.
 
+### Pruebas de rendimiento de operaciones masivas
+
+`BulkOperationsBenchTest`, `BulkDeletePerfTest` y `BulkSelectionPerfTest` miden en el dispositivo (tiempo de hilo de UI por
+fotograma, latencia del hilo principal, memoria, duración de cada operación) y escriben el resultado en Logcat con la
+etiqueta `BulkPerf`; `BulkCloudDeleteUiTest` comprueba que un borrado masivo en S3 no bloquea la pantalla, que se puede
+cancelar y que un fallo parcial se informa y se reintenta solo para lo fallido. Cifras, método y límites: [performance.md](performance.md).
+Estas pruebas crean fotos en `Pictures/S3VaultBulkPerf`; si una ejecución se interrumpe pueden quedar allí.
+
 ### Notas de las pruebas de borrado y vista previa
 
 - Los archivos que crea la propia prueba son suyos: Android los deja borrar sin preguntar con `ContentResolver.delete`, pero `createDeleteRequest` sigue mostrando el diálogo. `PhotoManagementUiTest` lo gestiona: Compose solo dibuja fotogramas mientras el hilo de pruebas está dentro de una llamada a Compose, así que tras la confirmación hay que ejecutar un `waitForIdle()` antes de esperar a que Android muestre su diálogo, y se pulsa «Permitir» por posición relativa (calibrada en el AVD de 1080×2400).
@@ -80,6 +95,7 @@ Usa un **bucket de prueba independiente** con el prefijo `s3vault-it/` y la pol�
 7. Elimina una foto del teléfono: el objeto sigue en S3; restáurala desde «S3» y compara `sha256sum`.
 7b. Con la política de [«Permitir borrar desde la app»](iam-policy.md#permitir-borrar-desde-la-app-opcional): en la pestaña S3 elige una foto → «Eliminar de S3». Comprueba con `aws s3 ls --recursive` que desaparecen la foto y `.s3vault/thumbs/<sha256>.jpg`, y que `.s3vault/albums.json` sigue. Con el `Deny` original la app debe explicar que la política no lo permite.
 7c. Mira una foto en la pestaña S3 y revisa en CloudTrail / métricas de S3 que solo hubo un `GET` de la miniatura (y nunca del original).
+7d. Álbumes de S3: con fotos migradas solo a S3 y un `.s3vault/albums.json` válido, Álbumes → icono de nube debe crear los álbumes con sus fotos (vistas previas, sin `GET` de originales). «Quitar del álbum» no toca el objeto.
 8. Quita `GetObject` de la política: «Probar permisos» debe marcar ✗ solo en `s3:GetObject`.
 9. Cambia la región por una equivocada: el mensaje debe indicar la región correcta.
 
@@ -90,7 +106,8 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - Subida/verificación/restauración extremo a extremo contra S3 real (el servidor simulado cubre el protocolo, no las particularidades de AWS: firma sobre HTTPS con `UNSIGNED-PAYLOAD`, `ChecksumMode`, comportamiento del 403/404 en `HEAD`).
 - Credenciales STS reales (`assume-role`, `get-session-token`, `export-credentials` con SSO) y el formato exacto de `Expiration` de tu versión de la CLI.
 - `WorkManager` periódico con pantalla apagada, Doze, ahorro de batería y *standby buckets*; reinicio real del dispositivo.
-- Rendimiento y memoria con bibliotecas grandes (≥ 20 000 fotos): la cuadrícula observa la lista completa desde Room; medir y, si hace falta, paginar. Primer escaneo de MediaStore con muchos archivos.
+- Rendimiento y memoria con bibliotecas de **100 000+** fotos y en un dispositivo real de gama baja (con 20 000 por galería se midió en el emulador, ver `LibraryPerformanceTest`; el tiempo del primer escaneo de MediaStore con muchos archivos no se midió). Un listado de S3 de decenas de miles de objetos contra AWS real tampoco.
+- Fechas de captura reales: en el emulador MediaProvider ignora el `DATE_TAKEN` que escribe una prueba, así que las pruebas de interfaz usan fechas en el nombre del archivo; la lectura de `DATE_TAKEN`/EXIF está cubierta por las pruebas unitarias del resolvedor, no por una foto de cámara real.
 - Hashing y subida de archivos grandes (varios cientos de MB) y de vídeos; límite de 4 GiB sin multipart.
 - Acceso parcial a fotos de Android 14+ (selección limitada) y revocación del permiso durante un respaldo.
 - Fotos HEIC/RAW y vídeos: miniaturas y reproducción en el visor según el dispositivo.
@@ -99,4 +116,6 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - **Borrado local en Android 10 (API 29)** (`RecoverableSecurityException`, un diálogo por foto): implementado pero no ejecutado; el AVD es de API 37. En Android 11+ se probó con el diálogo real de `createDeleteRequest`, tanto a mano como en `PhotoManagementUiTest`.
 - Comportamiento real de `DeleteObjects` de AWS (la firma con suma de comprobación, un bucket con *Versioning* y reglas de ciclo de vida con `GLACIER_IR`): el servidor simulado cubre el protocolo y el SDK real, no las particularidades de AWS.
 - Miniaturas de HEIC/AVIF, RAW y vídeos largos en dispositivos reales (`ContentResolver.loadThumbnail` depende del códec del fabricante) y el tamaño real de miniatura con fotos de cámara (la estimación de 60 KB está sin medir en tu biblioteca).
+- **Precios reales de tu cuenta:** la estimación usa precios de lista; no se ha contrastado con una factura real de AWS ni con Cost Explorer.
+- Buckets con cientos de miles de objetos: el inventario hace una solicitud LIST por cada 1000 y se mantiene en memoria solo mientras se agrega; no se ha medido el tiempo con listados enormes.
 - Rendimiento del relleno de miniaturas con decenas de miles de fotos y con ahorro de batería (se hacen 300 por ejecución del *worker*).

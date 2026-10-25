@@ -9,24 +9,53 @@ import com.s3vault.app.data.local.MediaScanSource
 import com.s3vault.app.domain.SyncState
 import com.s3vault.app.domain.SyncStateMachine
 import com.s3vault.app.settings.AppSettings
+import androidx.room.withTransaction
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 enum class MediaAccess { NONE, PARTIAL, FULL }
+
+/** A counter that changes whenever the thing it watches (MediaStore) may have changed. */
+interface ChangeSignal {
+    val version: Long
+}
 
 /** Keeps the Room index in step with MediaStore. Serialized: scans never overlap. */
 class LibraryRepository(
     private val scanner: MediaScanSource,
     private val indexer: MediaIndexer,
     private val access: () -> MediaAccess,
+    /** Runs before every scan (e.g. rewrite day keys after a time zone change). */
+    private val beforeScan: suspend () -> Unit = {},
+    /** When given, a non-forced refresh is skipped while MediaStore and the permission are as the last scan saw them. */
+    private val changes: ChangeSignal? = null,
 ) {
     private val mutex = Mutex()
+    private var scannedVersion = -1L
+    private var scannedAccess: MediaAccess? = null
 
-    /** Returns null when there is no media permission (nothing is touched in that case). */
-    suspend fun refresh(): IndexResult? = mutex.withLock {
+    /** False until a scan finished in this process: the first one is worth showing as work in progress. */
+    @Volatile var hasScanned: Boolean = false
+        private set
+
+    /**
+     * Returns null when there is no media permission (nothing is touched in that case).
+     *
+     * [force] is for an explicit request (pull to refresh, retry, a worker). Without it the scan is skipped when
+     * nothing changed since the last one, which makes coming back to the app free instead of a full re-read.
+     */
+    suspend fun refresh(force: Boolean = true): IndexResult? = mutex.withLock {
         val a = access()
-        if (a == MediaAccess.NONE) return null
-        indexer.reconcile(scanner.scan(), fullAccess = a == MediaAccess.FULL)
+        if (a == MediaAccess.NONE) { scannedAccess = null; return null }
+        val version = changes?.version
+        if (!force && version != null && version == scannedVersion && a == scannedAccess) return IndexResult(0, 0, 0, 0)
+        beforeScan()
+        val result = indexer.reconcile(scanner.scan(), fullAccess = a == MediaAccess.FULL)
+        // The version seen *before* the scan: a change that lands during it makes the next refresh run again.
+        scannedVersion = version ?: -1L
+        scannedAccess = a
+        hasScanned = true
+        result
     }
 }
 
@@ -45,23 +74,30 @@ class BackupController(
     /** Explicitly selected items are queued even if they are videos. Already backed-up items are skipped. */
     suspend fun enqueue(ids: List<Long>): Int {
         SyncStateMachine.require(SyncState.LOCAL_ONLY, SyncState.QUEUED)
-        var n = 0
-        ids.forEach { n += media.enqueue(it, nowMs()) }
+        val n = enqueueBatched(ids)
         afterEnqueue(n)
         return n
     }
 
+    /**
+     * One transaction and one statement per 400 photos instead of one write per photo: a 300-photo selection used to make
+     * the screen re-query its lists about 300 times; now it does it once.
+     */
+    private suspend fun enqueueBatched(ids: List<Long>): Int {
+        if (ids.isEmpty()) return 0
+        val now = nowMs()
+        return db.withTransaction { ids.distinct().chunked(BATCH).sumOf { media.enqueueAll(it, now) } }
+    }
+
     suspend fun enqueuePending(includeVideos: Boolean, kick: Boolean = true): Int {
-        var n = 0
-        media.pendingLocalOnly(includeVideos).forEach { n += media.enqueue(it.mediaStoreId, nowMs()) }
+        val n = enqueueBatched(media.pendingLocalOnly(includeVideos).map { it.mediaStoreId })
         if (kick) afterEnqueue(n)
         return n
     }
 
     suspend fun retryFailed(): Int {
         SyncStateMachine.require(SyncState.FAILED, SyncState.QUEUED)
-        var n = 0
-        media.failed().forEach { n += media.enqueue(it.mediaStoreId, nowMs()) }
+        val n = enqueueBatched(media.failed().map { it.mediaStoreId })
         afterEnqueue(n)
         return n
     }
@@ -90,6 +126,11 @@ class BackupController(
         if (media.queuedCount() > 0 && !settings.currentBackup().paused) scheduler.kickBackup(settings.currentBackup().wifiOnly)
     }
 
+    private companion object {
+        /** Older SQLite builds (Android 10/11) allow 999 bound variables per statement. */
+        const val BATCH = 400
+    }
+
     private suspend fun afterEnqueue(n: Int) {
         val s = settings.currentBackup()
         if (n > 0 && !s.paused) scheduler.kickBackup(s.wifiOnly)
@@ -112,20 +153,28 @@ class RemoteLibraryController(
 
     suspend fun restore(keys: List<String>): Int {
         SyncStateMachine.require(SyncState.REMOTE_ONLY, SyncState.RESTORING)
-        var n = 0
-        keys.forEach { n += db.remote().transition(it, SyncState.REMOTE_ONLY, SyncState.RESTORING, null) }
+        val n = if (keys.isEmpty()) 0 else db.withTransaction {
+            keys.distinct().chunked(400).sumOf { db.remote().transitionAll(it, SyncState.REMOTE_ONLY, SyncState.RESTORING, null) }
+        }
         if (n > 0) scheduler.kickRestore(settings.currentBackup().wifiOnly)
         return n
     }
 
     suspend fun cancelRestore(keys: List<String>) {
         SyncStateMachine.require(SyncState.RESTORING, SyncState.REMOTE_ONLY)
-        keys.forEach { db.remote().transition(it, SyncState.RESTORING, SyncState.REMOTE_ONLY, null) }
+        if (keys.isNotEmpty()) db.withTransaction {
+            keys.distinct().chunked(400).forEach { db.remote().transitionAll(it, SyncState.RESTORING, SyncState.REMOTE_ONLY, null) }
+        }
         scheduler.cancelRestore()
         if (db.remote().getAll().any { it.state == SyncState.RESTORING }) scheduler.kickRestore(settings.currentBackup().wifiOnly)
     }
 
     suspend fun hasLocalCopy(versionId: String): Boolean = db.media().countLocalWithHash(versionId) > 0
+
+    /** Opt-in: reads the capture date of the objects that have none (one HEAD each, resumable, WorkManager). */
+    suspend fun completeCaptureDates() = scheduler.kickCloudDates(settings.currentBackup().wifiOnly)
+
+    fun cancelCaptureDates() = scheduler.cancelCloudDates()
 }
 
 class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long = System::currentTimeMillis) {
@@ -140,4 +189,7 @@ class AlbumController(private val db: AppDatabase, private val nowMs: () -> Long
 
     /** Removes membership only; the photo file is untouched. */
     suspend fun remove(albumId: Long, mediaIds: List<Long>) = db.albums().removeItems(albumId, mediaIds)
+
+    /** Removes the membership of S3-only photos (by content hash); the objects in S3 are untouched. */
+    suspend fun removeCloud(albumId: Long, versionIds: List<String>) = db.albums().removeRemoteItems(albumId, versionIds)
 }
