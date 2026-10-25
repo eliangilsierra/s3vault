@@ -1,6 +1,6 @@
 # Ficha de Google Play: borrador en español
 
-> **Estado: borrador para revisar. No está publicado ni enviado a revisión.** Todo lo que sigue describe lo que la app hace hoy (versión 0.4.0); si cambia el comportamiento, hay que cambiar el texto. Los límites de longitud se comprobaron con la ayuda oficial de Play Console cuando la página los indica (descripción corta: 80 caracteres; icono: 512×512 PNG de 32 bits; gráfico de funciones: 1024×500; entre 2 y 8 capturas por tipo de dispositivo). El límite del nombre (30 caracteres) y de la descripción completa (4 000) es el habitual de Play, pero **no apareció en la página consultada: confírmalo en Play Console al pegarlos.**
+> **Estado: borrador para revisar. No está publicado ni enviado a revisión.** Todo lo que sigue describe lo que la app hace hoy (versión 0.4.1); si cambia el comportamiento, hay que cambiar el texto. Los límites de longitud se comprobaron con la ayuda oficial de Play Console cuando la página los indica (descripción corta: 80 caracteres; icono: 512×512 PNG de 32 bits; gráfico de funciones: 1024×500; entre 2 y 8 capturas por tipo de dispositivo). El límite del nombre (30 caracteres) y de la descripción completa (4 000) es el habitual de Play, pero **no apareció en la página consultada: confírmalo en Play Console al pegarlos.**
 
 ## Datos básicos
 
@@ -66,7 +66,7 @@ LIMITACIONES
 
 Capturas incluidas: galería, selección con «Respaldar en S3», bienvenida del tutorial, «Cómo se guardan tus fotos», herramientas, ajustes y ayuda. **Faltan** (no se pueden mostrar sin una cuenta de AWS real): pestañas Respaldo y S3 con datos reales. Se recomienda añadirlas con un bucket de pruebas del propietario, sin fotos privadas. Las capturas de tableta (7 y 10 pulgadas) son opcionales; no se han hecho.
 
-## Texto para «Novedades» de la versión 0.4.0 (máx. 500 caracteres)
+## Texto para «Novedades» de la versión 0.4.1 (máx. 500 caracteres)
 
 ```
 • Tutorial de bienvenida y sección de ayuda.

@@ -58,7 +58,7 @@ Comprobado en código y pruebas: no hay credenciales embebidas ni claves en el r
 
 Pendiente o fuera de alcance: bloqueo biométrico/PIN **de toda la app** (los álbumes privados sí se protegen; el resto de la galería y las credenciales guardadas siguen abiertas para quien tenga el teléfono desbloqueado), análisis de dependencias con herramienta externa, pruebas de penetración, y verificación en dispositivo real con Play Integrity/bootloader desbloqueado.
 
-## Revisión previa a la publicación (25 de octubre de 2026, versión 0.4.0)
+## Revisión previa a la publicación (25 de octubre de 2026, versión 0.4.1)
 
 Qué se comprobó, cómo y con qué resultado. «Comprobado» significa que se ejecutó o se leyó el código; no es una auditoría independiente.
 

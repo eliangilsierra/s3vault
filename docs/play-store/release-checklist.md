@@ -7,7 +7,7 @@
 | | Paso | Estado |
 |---|---|---|
 | ✅ | `targetSdk 36` (requisito vigente para envíos nuevos y actualizaciones) y `minSdk 29`; `applicationId` sin cambios (`com.s3vault.app`) | hecho en el repositorio |
-| ✅ | Versión **0.4.0 (versionCode 6)**. Cada subida a Play necesita un `versionCode` mayor que el anterior: **subirlo antes de cada nuevo envío** (`app/build.gradle.kts`) | hecho; mantener al día |
+| ✅ | Versión **0.4.1 (versionCode 7)**. Cada subida a Play necesita un `versionCode` mayor que el anterior: **subirlo antes de cada nuevo envío** (`app/build.gradle.kts`) | hecho; mantener al día |
 | ✅ | Paquete `app-release.aab` firmado, de solo `arm64-v8a`, sin archivos de depuración (ver [release.md](../release.md)) | hecho en el repositorio |
 | ✅ | Permisos mínimos y justificados ([declarations.md](declarations.md)); sin SDK de analítica ni publicidad | hecho |
 | ✅ | Pruebas: unitarias, instrumentadas en emulador, lint, R8 | ver [testing.md](../testing.md) |

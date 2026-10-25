@@ -1,6 +1,6 @@
 # Política de privacidad de S3 Vault: borrador
 
-> **Estado: borrador técnico. No es un texto legal ni está revisado por un abogado, y no está publicado.** Describe lo que la app hace según el código, el manifiesto y las dependencias de la versión 0.4.0. Los datos del responsable van entre corchetes (`[PENDIENTE: …]`) porque **no se han inventado**: ver [owner-data.md](owner-data.md). Play exige una URL pública para esta política; hay que alojarla en un sitio del propietario (no se ha creado ninguna).
+> **Estado: borrador técnico. No es un texto legal ni está revisado por un abogado, y no está publicado.** Describe lo que la app hace según el código, el manifiesto y las dependencias de la versión 0.4.1. Los datos del responsable van entre corchetes (`[PENDIENTE: …]`) porque **no se han inventado**: ver [owner-data.md](owner-data.md). Play exige una URL pública para esta política; hay que alojarla en un sitio del propietario (no se ha creado ninguna).
 
 **Última actualización:** [PENDIENTE: fecha de publicación]
 **Responsable:** [PENDIENTE: nombre o razón social del desarrollador]

@@ -1,6 +1,6 @@
 # Declaraciones de Play Console: borrador
 
-> **Estado: borrador. Nada de esto se ha enviado.** Basado en el manifiesto de la versión 0.4.0 (`app/build/intermediates/merged_manifests/release`), en el código y en la política oficial vigente consultada el 25 de octubre de 2026.
+> **Estado: borrador. Nada de esto se ha enviado.** Basado en el manifiesto de la versión 0.4.1 (`app/build/intermediates/merged_manifests/release`), en el código y en la política oficial vigente consultada el 25 de octubre de 2026.
 
 ## 1. Permisos del manifiesto final y su justificación
 
