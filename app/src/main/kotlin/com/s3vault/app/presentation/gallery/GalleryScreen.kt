@@ -29,11 +29,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -129,6 +131,9 @@ fun GalleryScreen(
     onOpen: (Long) -> Unit,
     onOpenBackup: () -> Unit = {},
     onOpenCredentials: () -> Unit = {},
+    onOpenTools: () -> Unit = {},
+    moveVm: com.s3vault.app.presentation.privacy.PrivateMoveViewModel? = null,
+    onOpenPrivate: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val browse by vm.browse.collectAsStateWithLifecycle()
@@ -145,6 +150,7 @@ fun GalleryScreen(
     val snackbar = remember { SnackbarHostState() }
     var albumSheet by remember { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
+    var toolsMenu by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(query.search.isNotEmpty()) }
     var filterSheet by remember { mutableStateOf(false) }
     var timelineSheet by remember { mutableStateOf(false) }
@@ -205,6 +211,11 @@ fun GalleryScreen(
                                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
                                         onClick = { overflow = false; albumSheet = true },
                                     )
+                                    if (moveVm != null) DropdownMenuItem(
+                                        text = { Text("Mover a álbum privado…") },
+                                        leadingIcon = { Icon(Icons.Filled.Lock, null) },
+                                        onClick = { overflow = false; moveVm.start(state.selected.toList()); vm.clearSelection() },
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("Compartir") },
                                         leadingIcon = { Icon(Icons.Filled.Share, null) },
@@ -231,6 +242,16 @@ fun GalleryScreen(
                             SearchAction { searching = true }
                             if (layout.hasHeaders) TimelineAction { timelineSheet = true }
                             FilterAction(query.filters.activeCount) { filterSheet = true }
+                            Box {
+                                IconButton(onClick = { toolsMenu = true }) { Icon(Icons.Filled.MoreVert, "Más opciones") }
+                                DropdownMenu(expanded = toolsMenu, onDismissRequest = { toolsMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Herramientas de la biblioteca") },
+                                        leadingIcon = { Icon(Icons.Filled.Build, null) },
+                                        onClick = { toolsMenu = false; onOpenTools() },
+                                    )
+                                }
+                            }
                         },
                     )
                 }
@@ -374,6 +395,9 @@ fun GalleryScreen(
     }
 
     DeleteHost(deleteVm, snackbar, onStarted = vm::clearSelection, onOpenCredentials = onOpenCredentials)
+    if (moveVm != null) {
+        com.s3vault.app.presentation.privacy.PrivateMoveHost(moveVm, snackbar, onDeleteOriginals = { deleteVm.request(it) }, onOpenPrivate = onOpenPrivate)
+    }
 }
 
 /** Says why nothing matched and what to try, so an empty result is never a dead end. */
