@@ -129,6 +129,7 @@ fun filterChips(f: LibraryFilters, onChange: (LibraryFilters) -> Unit): List<Chi
     f.availability?.let { a -> add(ChipSpec(if (a == CloudAvailability.CLOUD_ONLY) "Solo en S3" else "También en el dispositivo") { onChange(f.copy(availability = null)) }) }
     f.folders.forEach { name -> add(ChipSpec(name) { onChange(f.copy(folders = f.folders - name)) }) }
     if (f.undatedOnly) add(ChipSpec("Sin fecha de captura") { onChange(f.copy(undatedOnly = false)) })
+    f.minSizeBytes?.let { add(ChipSpec("${(it / (1024 * 1024)).coerceAtLeast(1)} MB o más") { onChange(f.copy(minSizeBytes = null)) }) }
 }
 
 // ------------------------------------------------------------------ search field

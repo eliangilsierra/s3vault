@@ -102,7 +102,7 @@ fun DeleteHost(
     when (s) {
         DeleteUiState.Idle, is DeleteUiState.SystemDialog -> Unit
         is DeleteUiState.Choose -> ChooseSheet(s.impact, vm::chooseDevice, vm::chooseCloud, vm::dismiss)
-        is DeleteUiState.ConfirmDevice -> ConfirmDeviceDialog(s.impact, vm::confirmDevice, vm::dismiss)
+        is DeleteUiState.ConfirmDevice -> ConfirmDeviceDialog(s.impact, s.note, vm::confirmDevice, vm::dismiss)
         is DeleteUiState.ConfirmCloud -> ConfirmCloudDialog(s.impact, s.bucket, vm::confirmCloud, vm::dismiss)
         is DeleteUiState.Working -> Unit // drawn below as a bar: the screen underneath stays usable
         is DeleteUiState.CloudFailed -> FailedDialog(s, vm::retryCloud, vm::dismiss, onOpenCredentials)
@@ -201,7 +201,7 @@ private fun ChoiceCard(icon: ImageVector, title: String, body: String, count: In
 // ------------------------------------------------------------------ confirmations
 
 @Composable
-private fun ConfirmDeviceDialog(impact: DeleteImpact, onConfirm: (Boolean) -> Unit, onDismiss: () -> Unit) {
+private fun ConfirmDeviceDialog(impact: DeleteImpact, note: String?, onConfirm: (Boolean) -> Unit, onDismiss: () -> Unit) {
     val mixed = impact.deviceOnly > 0 && impact.deviceOnly < impact.onDevice
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -215,6 +215,7 @@ private fun ConfirmDeviceDialog(impact: DeleteImpact, onConfirm: (Boolean) -> Un
                     "Se borran de este móvil. Android te pedirá confirmarlo.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (note != null) Text(note, style = MaterialTheme.typography.bodyMedium)
                 val safe = impact.onDevice - impact.deviceOnly
                 if (safe > 0) {
                     Text(
