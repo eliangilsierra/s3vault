@@ -44,7 +44,17 @@ class AppViewModelFactory(private val container: AppContainer) : ViewModelProvid
         GalleryViewModel::class.java -> GalleryViewModel(container)
         LibraryViewerViewModel::class.java -> LibraryViewerViewModel(container)
         AlbumsViewModel::class.java -> AlbumsViewModel(container)
-        BackupViewModel::class.java -> BackupViewModel(container)
+        com.s3vault.app.presentation.semantic.SemanticSearchViewModel::class.java -> com.s3vault.app.presentation.semantic.SemanticSearchViewModel(container)
+        com.s3vault.app.presentation.smart.SmartAlbumsViewModel::class.java -> com.s3vault.app.presentation.smart.SmartAlbumsViewModel(container)
+        com.s3vault.app.presentation.smart.SmartAlbumDetailViewModel::class.java -> com.s3vault.app.presentation.smart.SmartAlbumDetailViewModel(container)
+        com.s3vault.app.presentation.smart.SmartViewerViewModel::class.java -> com.s3vault.app.presentation.smart.SmartViewerViewModel(container)
+        com.s3vault.app.presentation.duplicates.DuplicatesViewModel::class.java -> com.s3vault.app.presentation.duplicates.DuplicatesViewModel(container)
+        com.s3vault.app.presentation.space.SpaceRecoveryViewModel::class.java -> com.s3vault.app.presentation.space.SpaceRecoveryViewModel(container)
+        com.s3vault.app.presentation.integrity.IntegrityViewModel::class.java -> com.s3vault.app.presentation.integrity.IntegrityViewModel(container)
+        com.s3vault.app.presentation.sync.SyncCenterViewModel::class.java -> com.s3vault.app.presentation.sync.SyncCenterViewModel(container)
+        com.s3vault.app.presentation.privacy.PrivateHubViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateHubViewModel(container)
+        com.s3vault.app.presentation.privacy.PrivateAlbumViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateAlbumViewModel(container)
+        com.s3vault.app.presentation.privacy.PrivateMoveViewModel::class.java -> com.s3vault.app.presentation.privacy.PrivateMoveViewModel(container)
         RemoteViewModel::class.java -> RemoteViewModel(container)
         CloudViewerViewModel::class.java -> CloudViewerViewModel(container)
         S3SettingsViewModel::class.java -> S3SettingsViewModel(container)
@@ -148,65 +158,6 @@ class AlbumsViewModel(private val c: AppContainer) : ViewModel() {
         val ids = selected.value.toList()
         viewModelScope.launch { c.backup.enqueue(ids); clearSelection() }
     }
-}
-
-// ---------------------------------------------------------------- Backup
-
-data class BackupUiState(
-    val backedUp: Int = 0,
-    val pending: Int = 0,
-    val queued: Int = 0,
-    val inFlight: List<MediaItem> = emptyList(),
-    val failed: List<MediaItem> = emptyList(),
-    val lastBackupMs: Long? = null,
-    val settings: BackupSettings = BackupSettings(),
-    val needsCredentials: Boolean = false,
-    val auth: AuthStatus = AuthStatus.Missing,
-    val configured: Boolean = false,
-    val events: List<TransferEvent> = emptyList(),
-    /** Backed-up files on this device whose S3 preview is still missing. */
-    val previewBacklog: Int = 0,
-)
-
-class BackupViewModel(private val c: AppContainer) : ViewModel() {
-    val uploads = c.progress.uploads
-
-    private val core: Flow<BackupUiState> = combine(
-        c.db.media().observeCounts(),
-        c.db.media().observeByStates(listOf(SyncState.UPLOADING, SyncState.VERIFYING)),
-        c.db.media().observeByStates(listOf(SyncState.FAILED)),
-        c.settings.lastSuccessfulTransferMs,
-        c.settings.backup,
-    ) { counts, flight, failed, last, settings ->
-        fun n(s: SyncState) = counts.firstOrNull { it.syncState == s }?.n ?: 0
-        BackupUiState(
-            backedUp = n(SyncState.BACKED_UP),
-            pending = n(SyncState.LOCAL_ONLY),
-            queued = n(SyncState.QUEUED),
-            inFlight = flight.map(MediaItemEntity::toDomain),
-            failed = failed.map(MediaItemEntity::toDomain),
-            lastBackupMs = last,
-            settings = settings,
-        )
-    }
-
-    val state: StateFlow<BackupUiState> = combine(
-        core, c.settings.needsCredentials, c.credentials.status, c.settings.s3Config, c.db.events().observeRecent(30),
-    ) { base, needs, auth, cfg, events ->
-        base.copy(needsCredentials = needs, auth = auth, configured = cfg != null, events = events.map { it.toDomain() })
-    }.combine(c.db.media().observeThumbnailBacklog()) { s, n -> s.copy(previewBacklog = n) }
-        .eagerly(viewModelScope, BackupUiState())
-
-    fun backupPending() {
-        viewModelScope.launch { c.backup.enqueuePending(c.settings.currentBackup().includeVideos) }
-    }
-    fun pause() { viewModelScope.launch { c.backup.pause() } }
-    fun resume() { viewModelScope.launch { c.backup.resume() } }
-    fun retryFailed() { viewModelScope.launch { c.backup.retryFailed() } }
-    fun cancelQueue() { viewModelScope.launch { c.backup.cancelQueued() } }
-
-    /** The backup worker also creates the missing previews once its queue is empty, under the same network rules. */
-    fun createPreviews() { viewModelScope.launch { c.scheduler.kickBackup(c.settings.currentBackup().wifiOnly) } }
 }
 
 // ---------------------------------------------------------------- S3 settings

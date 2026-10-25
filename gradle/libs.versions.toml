@@ -10,6 +10,7 @@ room = "2.8.5"
 work = "2.11.2"
 datastore = "1.2.1"
 coil = "3.4.0"
+onnxruntime = "1.28.0"
 awsSdk = "1.9.23"
 coroutines = "1.10.2"
 junit = "4.13.2"
@@ -42,6 +43,7 @@ work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work"
 work-testing = { module = "androidx.work:work-testing", version.ref = "work" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 coil-video = { module = "io.coil-kt.coil3:coil-video", version.ref = "coil" }
 aws-s3 = { module = "aws.sdk.kotlin:s3", version.ref = "awsSdk" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }

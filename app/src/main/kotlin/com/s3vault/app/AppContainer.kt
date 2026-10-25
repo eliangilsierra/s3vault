@@ -58,6 +58,9 @@ class AppContainer(private val context: Context) {
     val credentials: CredentialsRepository by lazy { CredentialsRepository(KeystoreSecretStore(context)) }
     val progress = TransferProgress()
     val events by lazy { EventLog(db) }
+    val jobs by lazy { com.s3vault.app.sync.JobRecorder(db) }
+    /** When this process began: a job that was RUNNING before that belongs to a process that died. */
+    val processStartMs: Long = System.currentTimeMillis()
     val scheduler by lazy { WorkManagerScheduler(context) }
     private val mediaSource by lazy { MediaStoreSource(context) }
 
@@ -118,6 +121,50 @@ class AppContainer(private val context: Context) {
             progress = progress, events = events,
         )
     }
+
+    val integrityAuditor by lazy {
+        com.s3vault.app.sync.IntegrityAuditor(
+            db, remoteProvider, credentials, catalog, jobs, lastListing = { settings.remoteListing.first() },
+        )
+    }
+    /** Where the optional semantic-search model lives: the app's private storage, unreadable by other apps and removed with the app. */
+    val modelStore by lazy { com.s3vault.app.domain.semantic.ModelPackStore(File(context.filesDir, "models")) }
+    val modelDownloader by lazy { com.s3vault.app.sync.ModelDownloader(modelStore) }
+    val embedderProvider by lazy {
+        com.s3vault.app.data.local.ClipEmbedderProvider(context, modelStore, com.s3vault.app.domain.semantic.ModelPacks.ClipB32)
+    }
+    val semanticIndexer by lazy { com.s3vault.app.sync.SemanticIndexer(db, embedderProvider, jobs) }
+    val semanticSearcher by lazy { com.s3vault.app.sync.SemanticSearcher(db) }
+    val duplicateScanner by lazy {
+        com.s3vault.app.sync.DuplicateScanner(db, mediaSource, com.s3vault.app.data.local.AndroidImageSignature(context), jobs)
+    }
+    val spaceRecovery by lazy {
+        com.s3vault.app.sync.SpaceRecoveryController(db, integrityAuditor, refreshIndex = { library.refresh(force = true) })
+    }
+    val integrityRepair by lazy { com.s3vault.app.sync.IntegrityRepair(db, backup) }
+
+    /** Private albums: the open/locked state and the vault key live in [privateSession] and only in memory. */
+    val privateSession by lazy { com.s3vault.app.domain.privacy.PrivateSession() }
+    /** Test-only: a keyring that replaces the Keystore one (set before the private vault is first used). Never set in production. */
+    @androidx.annotation.VisibleForTesting
+    var keyringOverride: com.s3vault.app.domain.privacy.VaultKeyring? = null
+    private val keystoreKeyring by lazy { com.s3vault.app.data.privacy.KeystoreKeyring(context) }
+    /** Forwards to the override or the Keystore keyring at call time, so the vault store (built early) sees a test's replacement. */
+    val vaultKeyring: com.s3vault.app.domain.privacy.VaultKeyring = object : com.s3vault.app.domain.privacy.VaultKeyring {
+        private val target get() = keyringOverride ?: keystoreKeyring
+        override fun isSecure() = target.isSecure()
+        override suspend fun create(prompt: com.s3vault.app.domain.privacy.UnlockPrompt) = target.create(prompt)
+        override suspend fun unwrap(wrapped: com.s3vault.app.domain.privacy.WrappedKey, prompt: com.s3vault.app.domain.privacy.UnlockPrompt) = target.unwrap(wrapped, prompt)
+        override fun deleteKey() = target.deleteKey()
+    }
+
+    /** Private screens are kept out of screenshots and the recents preview (always true in the app; instrumented tests that photograph them turn it off). */
+    var secureWindows: Boolean = true
+    val privateVault by lazy {
+        com.s3vault.app.data.privacy.PrivateVaultStore(db.privateVault(), vaultKeyring, privateSession, File(context.filesDir, "vault"))
+    }
+    val privateMover by lazy { com.s3vault.app.data.privacy.PrivateMover(privateVault, mediaSource, MediaStoreThumbnailMaker(context)) }
+    val privateImages by lazy { com.s3vault.app.data.privacy.PrivateImageCache(privateVault).also { c -> privateSession.addLockListener { c.clear() } } }
 
     val connectionTester = ConnectionTester(credentials)
 

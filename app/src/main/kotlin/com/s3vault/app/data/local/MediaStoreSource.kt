@@ -32,6 +32,8 @@ data class ScannedMedia(
     val dateSource: DateSource = DateSource.CAPTURE,
     /** `yyyyMMdd` of [dateTakenMs] in the zone of the scan. */
     val dayKey: Int = DateKeys.dayKey(dateTakenMs, ZoneId.systemDefault()),
+    val isFavorite: Boolean = false,
+    val dateAddedSec: Long = 0,
 )
 
 interface MediaScanSource {
@@ -61,7 +63,10 @@ class MediaStoreSource(private val context: Context) : MediaScanSource, LocalFil
             MediaStore.MediaColumns.WIDTH,
             MediaStore.MediaColumns.HEIGHT,
             MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
-        )
+        ).let { base ->
+            // IS_FAVORITE exists from Android 11; asking for it on Android 10 would fail the whole query.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) base + MediaStore.MediaColumns.IS_FAVORITE else base
+        }
         val out = ArrayList<ScannedMedia>()
         val zone = ZoneId.systemDefault()
         val nowMs = System.currentTimeMillis()
@@ -76,6 +81,7 @@ class MediaStoreSource(private val context: Context) : MediaScanSource, LocalFil
             val iW = c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
             val iH = c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
             val iBucket = c.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+            val iFav = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) c.getColumnIndex(MediaStore.MediaColumns.IS_FAVORITE) else -1
             while (c.moveToNext()) {
                 val id = c.getLong(iId)
                 val taken = if (c.isNull(iTaken)) 0L else c.getLong(iTaken)
@@ -96,6 +102,8 @@ class MediaStoreSource(private val context: Context) : MediaScanSource, LocalFil
                     folderName = c.getString(iBucket) ?: "",
                     dateSource = date.source,
                     dayKey = DateKeys.dayKey(date.ms, zone),
+                    isFavorite = iFav >= 0 && !c.isNull(iFav) && c.getInt(iFav) == 1,
+                    dateAddedSec = c.getLong(iAdded),
                 )
             }
         }

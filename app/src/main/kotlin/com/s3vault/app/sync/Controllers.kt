@@ -114,6 +114,19 @@ class BackupController(
         scheduler.kickBackup(settings.currentBackup().wifiOnly)
     }
 
+    /**
+     * Cancels the chosen uploads that have not started. They go back to "only on this device" and stay out of the automatic
+     * backup until the user chooses them again. Returns how many were really waiting: one a worker already took keeps going.
+     */
+    suspend fun cancelQueued(ids: List<Long>): Int {
+        SyncStateMachine.require(SyncState.QUEUED, SyncState.LOCAL_ONLY)
+        if (ids.isEmpty()) return 0
+        return db.withTransaction { ids.distinct().chunked(BATCH).sumOf { media.cancelQueued(it) } }
+    }
+
+    /** Retries these failed (or never queued) files. Same rules as [enqueue]; the name says what the user is doing. */
+    suspend fun retry(ids: List<Long>): Int = enqueue(ids)
+
     /** Moves everything not yet started back to LOCAL_ONLY. Does not touch completed backups. */
     suspend fun cancelQueued(): Int {
         scheduler.cancelBackup()

@@ -35,7 +35,7 @@ sealed interface DeleteUiState {
     /** "Which copy?" — the user must pick exactly one location. */
     data class Choose(val entries: List<DeleteEntry>, val impact: DeleteImpact) : DeleteUiState
 
-    data class ConfirmDevice(val entries: List<DeleteEntry>, val impact: DeleteImpact) : DeleteUiState
+    data class ConfirmDevice(val entries: List<DeleteEntry>, val impact: DeleteImpact, val note: String? = null) : DeleteUiState
 
     data class ConfirmCloud(val entries: List<DeleteEntry>, val impact: DeleteImpact, val bucket: String?) : DeleteUiState
 
@@ -154,6 +154,20 @@ class DeleteViewModel(private val c: AppContainer) : ViewModel() {
             }
             if (_state.value == DeleteUiState.Idle) showCloudConfirmation(entries)
         }
+    }
+
+    /**
+     * Straight to the device confirmation, for flows that only ever remove the local copy (freeing space, duplicates). The S3
+     * objects are not an option here; [note] says what was checked first.
+     */
+    fun requestDeviceOnly(entries: List<DeleteEntry>, note: String? = null) {
+        if (entries.isEmpty()) return
+        if (_state.value != DeleteUiState.Idle) {
+            if (_state.value is DeleteUiState.Working) _events.tryEmit(DeleteEvent.Message("Ya hay una eliminación en curso. Espera a que termine."))
+            return
+        }
+        if (busy()) return
+        _state.value = DeleteUiState.ConfirmDevice(entries, DeleteImpact.of(entries), note)
     }
 
     fun chooseDevice() {

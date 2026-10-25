@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -58,7 +60,6 @@ import com.s3vault.app.AppContainer
 import com.s3vault.app.domain.MediaItem
 import com.s3vault.app.presentation.AlbumsViewModel
 import com.s3vault.app.presentation.AppViewModelFactory
-import com.s3vault.app.presentation.BackupViewModel
 import com.s3vault.app.presentation.GalleryViewModel
 import com.s3vault.app.presentation.LibraryViewerViewModel
 import com.s3vault.app.presentation.GeneralSettingsViewModel
@@ -69,7 +70,28 @@ import com.s3vault.app.presentation.S3SettingsViewModel
 import com.s3vault.app.presentation.SecurityViewModel
 import com.s3vault.app.presentation.albums.AlbumDetailScreen
 import com.s3vault.app.presentation.albums.AlbumsScreen
-import com.s3vault.app.presentation.backup.BackupScreen
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ImageSearch
+import com.s3vault.app.presentation.semantic.SemanticSearchScreen
+import com.s3vault.app.presentation.semantic.SemanticSearchViewModel
+import androidx.compose.material.icons.filled.CleaningServices
+import com.s3vault.app.presentation.smart.SmartAlbumDetailScreen
+import com.s3vault.app.presentation.smart.SmartAlbumDetailViewModel
+import com.s3vault.app.presentation.smart.SmartAlbumsScreen
+import com.s3vault.app.presentation.smart.SmartAlbumsViewModel
+import com.s3vault.app.presentation.smart.SmartViewerViewModel
+import androidx.compose.material.icons.filled.ContentCopy
+import com.s3vault.app.presentation.duplicates.DuplicatesScreen
+import com.s3vault.app.presentation.duplicates.DuplicatesViewModel
+import androidx.compose.material.icons.filled.FactCheck
+import com.s3vault.app.presentation.space.SpaceRecoveryScreen
+import com.s3vault.app.presentation.space.SpaceRecoveryViewModel
+import com.s3vault.app.presentation.integrity.IntegrityScreen
+import com.s3vault.app.presentation.integrity.IntegrityViewModel
+import com.s3vault.app.presentation.tools.Tool
+import com.s3vault.app.presentation.tools.ToolsScreen
+import com.s3vault.app.presentation.sync.SyncCenterScreen
+import com.s3vault.app.presentation.sync.SyncCenterViewModel
 import com.s3vault.app.presentation.gallery.GalleryScreen
 import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.remote.RemoteScreen
@@ -94,6 +116,17 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val TabRoutes = Tab.entries.map { it.route }.toSet()
 
+/** The library tools, in the order the hub shows them. Each entry is a route; the hub never knows what a tool does. */
+private val LibraryTools = listOf(
+    Tool("sync", "Centro de sincronización", "Qué está en este dispositivo, en S3 o en camino, y por qué algo falló", Icons.Filled.CloudSync, "Respaldo"),
+    Tool("integrity", "Auditoría del respaldo", "Comprueba que S3 sigue teniendo lo que respaldaste (solo lee)", Icons.Filled.FactCheck, "Respaldo"),
+    Tool("semantic", "Buscar por contenido", "Encuentra fotos por lo que se ve. Opcional, en tu móvil, sin enviar nada", Icons.Filled.ImageSearch, "Organizar"),
+    Tool("smart", "Álbumes inteligentes", "Favoritas, capturas, vídeos, grandes, sin respaldar, por año… y los tuyos", Icons.Filled.AutoAwesome, "Organizar"),
+    Tool("private", "Álbumes privados", "Fotos cifradas que solo se abren con tu huella o PIN. Copia, no mueve ni borra", Icons.Filled.Lock, "Privacidad"),
+    Tool("duplicates", "Duplicados y parecidas", "Copias idénticas y fotos probablemente iguales, para elegir cuál conservar", Icons.Filled.ContentCopy, "Este dispositivo"),
+    Tool("space", "Liberar espacio", "Quita del móvil lo que S3 ya tiene verificado. Nunca toca S3", Icons.Filled.CleaningServices, "Este dispositivo"),
+)
+
 private const val VIEWER = "viewer/{source}/{id}"
 private const val ALBUM = "album/{id}"
 private const val CLOUD = "cloud/{key}?album={album}"
@@ -105,6 +138,16 @@ fun AppRoot(container: AppContainer) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val showBar = route in TabRoutes
+
+    // The private albums close behind the user's back (timeout, screen off, "bloquear ahora"): whatever private screen is open is
+    // replaced by the locked entrance at once, so a stale screen never stays reachable. Restored back stacks after the process died
+    // start locked, so they take the same path.
+    val unlocked by container.privateSession.unlocked.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(unlocked, route) {
+        if (!unlocked && route != null && route.startsWith("private/")) {
+            if (!nav.popBackStack("private", inclusive = false)) nav.navigate("private") { popUpTo(route) { inclusive = true } }
+        }
+    }
     val reduced = rememberReducedMotion()
     val enter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         when {
@@ -168,16 +211,24 @@ fun AppRoot(container: AppContainer) {
             composable(Tab.Gallery.route) {
                 val vm: GalleryViewModel = viewModel(factory = factory)
                 val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                val moveVm: com.s3vault.app.presentation.privacy.PrivateMoveViewModel = viewModel(factory = factory)
                 GalleryScreen(
                     vm, deleteVm,
+                    moveVm = moveVm, onOpenPrivate = { nav.navigate("private") },
                     onOpen = { id -> nav.navigate("viewer/all/$id") },
                     onOpenBackup = { nav.navigateTab(Tab.Backup.route) },
                     onOpenCredentials = { nav.navigate("settings/security") },
+                    onOpenTools = { nav.navigate("tools") },
                 )
             }
             composable(Tab.Albums.route) {
                 val vm: AlbumsViewModel = viewModel(factory = factory)
-                AlbumsScreen(vm) { id -> nav.navigate("album/$id") }
+                val smartVm: SmartAlbumsViewModel = viewModel(factory = factory)
+                val smart by smartVm.home.collectAsStateWithLifecycle()
+                AlbumsScreen(
+                    vm, onOpenAlbum = { id -> nav.navigate("album/$id") },
+                    smart = smart, onOpenSmart = { id -> nav.navigate("smart/" + android.net.Uri.encode(id)) }, onOpenSmartAll = { nav.navigate("smart") },
+                )
             }
             composable(ALBUM, listOf(navArgument("id") { type = NavType.LongType })) { e ->
                 val vm: AlbumsViewModel = viewModel(factory = factory)
@@ -191,8 +242,14 @@ fun AppRoot(container: AppContainer) {
                 )
             }
             composable(Tab.Backup.route) {
-                val vm: BackupViewModel = viewModel(factory = factory)
-                BackupScreen(vm, onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenSecurity = { nav.navigate("settings/security") })
+                val vm: SyncCenterViewModel = viewModel(factory = factory)
+                SyncCenterScreen(
+                    vm,
+                    onOpenS3Settings = { nav.navigate("settings/s3") },
+                    onOpenSecurity = { nav.navigate("settings/security") },
+                    onOpenPhoto = { id -> nav.navigate("viewer/one/$id") },
+                    onOpenCloudPhoto = { key -> nav.navigate("cloud/" + android.net.Uri.encode(key)) },
+                )
             }
             composable(Tab.Remote.route) {
                 val vm: RemoteViewModel = viewModel(factory = factory)
@@ -225,6 +282,77 @@ fun AppRoot(container: AppContainer) {
                     onBack = { nav.popBackStack() }, onOpenCredentials = { nav.navigate("settings/security") },
                 )
             }
+            composable("tools") {
+                ToolsScreen(LibraryTools, onBack = { nav.popBackStack() }) { id ->
+                    when (id) {
+                        "sync" -> nav.navigateTab(Tab.Backup.route)
+                        else -> nav.navigate(id)
+                    }
+                }
+            }
+            composable("private") {
+                val vm: com.s3vault.app.presentation.privacy.PrivateHubViewModel = viewModel(factory = factory)
+                com.s3vault.app.presentation.privacy.PrivateHubScreen(
+                    vm, secure = container.secureWindows, onBack = { nav.popBackStack() }, onOpenAlbum = { id -> nav.navigate("private/$id") },
+                )
+            }
+            composable("private/{albumId}", listOf(navArgument("albumId") { type = NavType.LongType })) { e ->
+                val vm: com.s3vault.app.presentation.privacy.PrivateAlbumViewModel = viewModel(factory = factory)
+                val albumId = e.arguments!!.getLong("albumId")
+                com.s3vault.app.presentation.privacy.PrivateAlbumScreen(
+                    vm, container.privateImages, albumId, unlocked = unlocked, secure = container.secureWindows,
+                    onBack = { nav.popBackStack() }, onOpen = { item -> nav.navigate("private/$albumId/$item") },
+                )
+            }
+            composable(
+                "private/{albumId}/{itemId}",
+                listOf(navArgument("albumId") { type = NavType.LongType }, navArgument("itemId") { type = NavType.LongType }),
+            ) { e ->
+                val vm: com.s3vault.app.presentation.privacy.PrivateAlbumViewModel = viewModel(factory = factory)
+                com.s3vault.app.presentation.privacy.PrivateViewerScreen(
+                    vm, container.privateImages, e.arguments!!.getLong("albumId"), e.arguments!!.getLong("itemId"),
+                    unlocked = unlocked, secure = container.secureWindows, onBack = { nav.popBackStack() },
+                )
+            }
+            composable("semantic") {
+                val vm: SemanticSearchViewModel = viewModel(factory = factory)
+                SemanticSearchScreen(vm, onBack = { nav.popBackStack() }, onOpenPhoto = { id -> nav.navigate("viewer/one/$id") })
+            }
+            composable("smart") {
+                val vm: SmartAlbumsViewModel = viewModel(factory = factory)
+                SmartAlbumsScreen(
+                    vm, onBack = { nav.popBackStack() },
+                    onOpenAlbum = { id -> nav.navigate("smart/" + android.net.Uri.encode(id)) },
+                    onOpenCloud = { a -> vm.openCloud(a); nav.navigateTab(Tab.Remote.route) },
+                )
+            }
+            composable("smart/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
+                val vm: SmartAlbumDetailViewModel = viewModel(factory = factory)
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                val id = e.arguments!!.getString("id")!!
+                SmartAlbumDetailScreen(
+                    id, vm, deleteVm, onBack = { nav.popBackStack() },
+                    onOpen = { mid -> nav.navigate("viewer/smart-" + android.net.Uri.encode(id) + "/$mid") },
+                    onOpenCredentials = { nav.navigate("settings/security") },
+                )
+            }
+            composable("duplicates") {
+                val vm: DuplicatesViewModel = viewModel(factory = factory)
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                DuplicatesScreen(vm, deleteVm, onBack = { nav.popBackStack() }, onOpenCredentials = { nav.navigate("settings/security") })
+            }
+            composable("space") {
+                val vm: SpaceRecoveryViewModel = viewModel(factory = factory)
+                val deleteVm: DeleteViewModel = viewModel(factory = factory)
+                SpaceRecoveryScreen(
+                    vm, deleteVm, onBack = { nav.popBackStack() }, onOpenIntegrity = { nav.navigate("integrity") },
+                    onOpenCredentials = { nav.navigate("settings/security") },
+                )
+            }
+            composable("integrity") {
+                val vm: IntegrityViewModel = viewModel(factory = factory)
+                IntegrityScreen(vm, onBack = { nav.popBackStack() }, onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenSecurity = { nav.navigate("settings/security") })
+            }
             composable(Tab.Settings.route) {
                 val costVm: StorageCostViewModel = viewModel(factory = factory)
                 val cost by costVm.state.collectAsStateWithLifecycle()
@@ -233,6 +361,7 @@ fun AppRoot(container: AppContainer) {
                     onSecurity = { nav.navigate("settings/security") },
                     onGeneral = { nav.navigate("settings/general") },
                     onCosts = { nav.navigate("settings/costs") },
+                    onTools = { nav.navigate("tools") },
                     costSummary = cost.summaryLine(),
                 )
             }
@@ -273,6 +402,19 @@ fun AppRoot(container: AppContainer) {
                     val d = viewerVm.data.collectAsStateWithLifecycle().value
                     data = d?.source
                     startIndex = d?.startIndex ?: 0
+                } else if (source.startsWith("smart-")) {
+                    val viewerVm: SmartViewerViewModel = viewModel(factory = factory)
+                    androidx.compose.runtime.LaunchedEffect(source, startId) { viewerVm.open(source.removePrefix("smart-"), startId) }
+                    val d = viewerVm.data.collectAsStateWithLifecycle().value
+                    data = d?.source
+                    startIndex = d?.startIndex ?: 0
+                } else if (source == "one") {
+                    // One photo opened from somewhere that is not a list of the gallery (for example the sync centre).
+                    val item by androidx.compose.runtime.produceState<MediaItem?>(null, startId) {
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { container.db.media().get(startId)?.toDomain() }
+                    }
+                    data = item?.let { com.s3vault.app.presentation.library.ListSource(listOf(it)) }
+                    startIndex = 0
                 } else {
                     val vm: AlbumsViewModel = viewModel(factory = factory)
                     val albumId = source.removePrefix("album-").toLong()

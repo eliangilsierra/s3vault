@@ -15,6 +15,9 @@ La aplicación se comunica directamente con la API de Amazon S3 mediante credenc
 - **Dos métodos de autenticación.** Credenciales temporales de STS (recomendado) o claves estáticas de un usuario IAM dedicado. Los secretos se cifran con una clave de Android Keystore.
 - **Ver fotos de S3 sin descargarlas.** Al respaldar se sube una miniatura de ~60 KB; la pestaña S3 muestra miniaturas y un visor con zoom que dice honestamente que es una vista previa. Sin miniatura se intenta la incrustada en el JPEG con una lectura `Range`; el original solo se descarga con *Restaurar*. Alternativas y costes en [docs/cloud-previews.md](docs/cloud-previews.md).
 - **Borrado explícito y separado.** «Eliminar del dispositivo» (diálogo del sistema Android) y «Eliminar de S3» (solo con el permiso IAM que tú actives) son acciones distintas, cada una con su confirmación; nunca se borran ambas copias de un solo paso. Quitar una foto de un álbum, cerrar sesión o desinstalar nunca toca S3.
+- **Herramientas de la biblioteca** (Galería → ⋮): centro de sincronización, auditoría de solo lectura del respaldo, liberar espacio solo con lo verificado en S3, duplicados y parecidas, y álbumes inteligentes. Ninguna borra sin confirmación ni necesita permisos IAM nuevos. Ver [docs/library-tools.md](docs/library-tools.md).
+- **Búsqueda por contenido, opcional y local.** Encuentra fotos por lo que se ve con un modelo CLIP que se ejecuta en el teléfono (descarga única de ≈ 148 MiB); nada sale del dispositivo. Aumenta el APK de ≈ 5,7 MB a 33,5 MiB (arm64). Ver [docs/semantic-search.md](docs/semantic-search.md).
+- **Álbumes privados.** Copias cifradas (AES-256-GCM) que se abren con huella o PIN; los originales no se tocan sin tu confirmación y, si pierdes la clave del dispositivo, no hay recuperación. Ver [docs/private-albums.md](docs/private-albums.md).
 
 ## Cómo funciona
 
@@ -102,6 +105,9 @@ S3 es un servicio de pago facturado a la cuenta de AWS del usuario: almacenamien
 | [docs/cloud-previews.md](docs/cloud-previews.md) | Vista previa sin descargar y borrado: alternativas, coste, límites y reglas de seguridad. |
 | [docs/security.md](docs/security.md) | Modelo de amenazas y tratamiento de los datos. |
 | [docs/design-system.md](docs/design-system.md) | Dirección visual, tokens, componentes y accesibilidad. |
+| [docs/library-tools.md](docs/library-tools.md) | Centro de sincronización, auditoría, liberar espacio, duplicados y álbumes inteligentes. |
+| [docs/semantic-search.md](docs/semantic-search.md) | Búsqueda por contenido: modelo, privacidad, medidas y límites. |
+| [docs/private-albums.md](docs/private-albums.md) | Álbumes privados: cifrado, clave, bloqueo y pérdida de la clave. |
 | [docs/testing.md](docs/testing.md) | Estrategia y cobertura de pruebas. |
 
 ## Licencia

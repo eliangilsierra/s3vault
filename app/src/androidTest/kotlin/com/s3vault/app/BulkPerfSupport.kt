@@ -39,6 +39,22 @@ object BulkPerfSupport {
         return ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
     }
 
+    /** One file with exactly these bytes in the real MediaStore (tests that need a file whose content they know). */
+    fun insertBytes(name: String, bytes: ByteArray, folder: String = "Pictures/S3VaultTest"): Uri {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+        resolver.openOutputStream(uri)!!.use { it.write(bytes) }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        return uri
+    }
+
+    fun delete(uri: Uri) { runCatching { resolver.delete(uri, null, null) } }
+
     /** Inserts [count] photos named `{prefix}0001.jpg`... and returns their content URIs. */
     fun insertPhotos(prefix: String, count: Int, from: Int = 1): List<Uri> = (from until from + count).map { i ->
         val values = ContentValues().apply {

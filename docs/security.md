@@ -11,6 +11,8 @@
 | Borrado accidental o malicioso | El borrado en S3 es una acción explícita con confirmación (más una casilla si la foto solo existe en S3), nunca se borran las dos copias de un solo paso y `S3RemoteStorage.delete` solo acepta claves de fotos y miniaturas del prefijo; la política recomendada lo **prohíbe** con un `Deny` y solo se activa si el usuario lo decide ([iam-policy.md](iam-policy.md#permitir-borrar-desde-la-app-opcional)) | Quien tenga otras credenciales puede borrar desde fuera de la app; si activas el borrado, la app puede borrar las fotos y miniaturas de tu prefijo |
 | Corrupción en tránsito/en reposo | SHA-256 enviado y validado por S3, `HEAD` de verificación, verificación del SHA-256 en restauración | Ver [synchronization.md](synchronization.md) (ETag no se usa como MD5) |
 | Pérdida del teléfono | Credenciales temporales caducan; revoca desde AWS | El cifrado local no sustituye a revocar |
+| Alguien con el móvil desbloqueado abre tus fotos privadas | Álbumes privados: cifrado AES-256-GCM, clave del Keystore que exige huella/PIN en cada desbloqueo, bloqueo automático, `FLAG_SECURE`, metadatos y miniaturas cifrados ([private-albums.md](private-albums.md)) | No protege frente a root, malware en la app con el vault abierto, ni sustituye al bloqueo del dispositivo; si se pierde la clave no hay recuperación |
+| Modelo de búsqueda manipulado | Descarga HTTPS con huella SHA-256 fijada en la app, verificada antes de usarlo; si no coincide se borra | Confías en el contenido que fija la huella (OpenAI CLIP, MIT, convertido a ONNX); ver [semantic-search.md](semantic-search.md) |
 | Exposición accidental del bucket | Block Public Access documentado como obligatorio; la app nunca habilita acceso público | Depende de la configuración del usuario |
 
 ## Qué datos hay dónde
@@ -23,6 +25,8 @@
 - Preferencias (DataStore): región, bucket, prefijo, método de autenticación, opciones de respaldo, tema. **Sin secretos.**
 - Último inventario del bucket para la estimación de costes (DataStore): cantidades y tamaños por clase de almacenamiento y por mes de subida, y el bucket que ya está en los ajustes. Sin credenciales, claves de objeto ni nombres de archivo; se borra al desconectar. Los precios van en la app y **no se consulta ningún servicio de precios** ([cost-estimate.md](cost-estimate.md)).
 - Credenciales: solo cifradas (archivo + Keystore).
+- Álbumes privados: `filesDir/vault/*.v|.t` (fotos y miniaturas cifradas con nombres aleatorios) y tablas `private_*` (clave del vault envuelta por el Keystore, nombres de álbum y metadatos cifrados). Sin texto claro: hay una prueba que lo comprueba en todas las columnas y archivos.
+- Búsqueda por contenido (opcional): el modelo (≈ 150 MB, `filesDir/models`) y un vector de 512 valores por foto (`semantic_embeddings`). Los vectores describen el contenido de las fotos: se pueden borrar desde la propia pantalla y se excluyen de las copias de Android.
 - Copias de seguridad de Android desactivadas (`allowBackup=false`, reglas de extracción vacías): ni el índice ni las credenciales viajan a la nube de Google.
 
 **En S3 (tu bucket)**
@@ -52,4 +56,4 @@ Ver también [cloud-previews.md](cloud-previews.md#borrado-reglas-de-seguridad).
 
 Comprobado en código y pruebas: no hay credenciales embebidas ni claves en el repositorio; sin `HostnameVerifier`/`TrustManager` personalizados; HTTPS-only en release; `allowBackup=false`; ningún `Log` directo con datos de usuario (todo por `SafeLog`); secretos solo en `SecretStore`; sin permisos de internet más allá de `INTERNET`/`ACCESS_NETWORK_STATE`; permisos de medios mínimos (`READ_MEDIA_*`, `READ_EXTERNAL_STORAGE` hasta API 32), sin acceso a toda la unidad; los `Intent` de compartir usan permisos de URI temporales.
 
-Pendiente o fuera de alcance: bloqueo biométrico/PIN de la app (cualquiera con el teléfono desbloqueado puede abrir la galería y usar las credenciales guardadas), análisis de dependencias con herramienta externa, pruebas de penetración, y verificación en dispositivo real con Play Integrity/bootloader desbloqueado.
+Pendiente o fuera de alcance: bloqueo biométrico/PIN **de toda la app** (los álbumes privados sí se protegen; el resto de la galería y las credenciales guardadas siguen abiertas para quien tenga el teléfono desbloqueado), análisis de dependencias con herramienta externa, pruebas de penetración, y verificación en dispositivo real con Play Integrity/bootloader desbloqueado.

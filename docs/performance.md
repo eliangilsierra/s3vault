@@ -185,6 +185,40 @@ adb logcat -d -s BulkPerf
 herramientas de depuración, firmada con la clave de depuración) para separar el coste de la app del de la compilación
 *debug*. En compilaciones *debug* `StrictMode` registra (sin cerrar la app) el trabajo de disco o red en el hilo principal.
 
+## Después de las herramientas de la biblioteca y los álbumes privados
+
+Las siete funciones nuevas ([library-tools.md](library-tools.md), [semantic-search.md](semantic-search.md), [private-albums.md](private-albums.md)) no deben empeorar lo ya optimizado. Se repitieron en el emulador (Android 17, x86_64, compilación *debug*) las mismas pruebas de selección y borrado masivos, con las fotos reales que las propias pruebas insertan en MediaStore (más de 300):
+
+| Operación (300 fotos) | Resultado |
+|---|---|
+| Seleccionar con toques reales (hilo de UI por fotograma) | mediana 1,3 ms · p90 2,4 ms · p99 5,8 ms · máx. 7,9 ms · **0 fotogramas por encima de 16,7 ms** de 1 188 |
+| Memoria al recorrer 300 fotos seleccionándolas | 301 MiB asignados, 30 GC (antes: 494–537 MiB, 60–64 GC) |
+| Poner en cola 300 para respaldar | 4 ms, **1** relectura de listas (30 → 9 ms, 100 → 3 ms) |
+| Borrar 300 en el dispositivo, de «Permitir» a terminado | 99 ms; peor fotograma tras «Permitir» 4,0 ms (14,4 ms al preparar el diálogo, antes de «Permitir») |
+| Borrar 300 objetos de S3 (servidor simulado) | 2 peticiones, 323 ms |
+| Asentar 300 archivos que siguen en el dispositivo (comprobación previa) | 19 ms |
+
+Lectura: **sin regresión**; las cifras son iguales o mejores que las de la tabla anterior (las nuevas funciones no se ejecutan durante la selección ni el borrado, y las consultas añadidas son agregados de una pasada).
+
+### Álbumes privados (medido con `PrivateVaultBenchTest`, 200 fotos reales en MediaStore)
+
+| Medida | Resultado (dos ejecuciones) |
+|---|---|
+| Cifrado de 32 MiB (AES-GCM, fragmentos de 64 KiB) | 153–192 MiB/s; descifrado 111–148 MiB/s |
+| Mover 200 fotos dentro (leer, cifrar, **releer y descifrar para verificar**, miniatura de 720 px cifrada, fila en Room) | 6,4–7,2 s en total: **31–35 ms por foto**; sin archivos temporales al terminar |
+| Miniatura en la cuadrícula (descifrar + decodificar a 360 px), en frío | mediana 2,3–2,6 ms · p95 6,1–6,6 ms · máx. 8,6 ms |
+| Foto completa en el visor (descifrar + decodificar a ≤ 2048 px) | mediana 2–7 ms · máx. 7–10 ms |
+| Sacar 50 fotos a la galería (descifrar, comprobar SHA-256, publicar en MediaStore, borrar la copia cifrada) | 35–36 ms por foto |
+| Espacio | los archivos cifrados + sus vistas previas de 720 px ocupan 1,3–1,6 veces los originales de este conjunto (fotos pequeñas: la vista previa pesa proporcionalmente más); el cifrado en sí añade 22 bytes por archivo y 16 por fragmento de 64 KiB |
+
+La caché de miniaturas descifradas es de 24 MiB (≈ 60 miniaturas de 360 px): una segunda pasada completa sobre 200 fotos vuelve a descifrar porque se desaloja (mediana 2,6 ms), lo que es lo esperado con un recorrido secuencial más largo que la caché. Todo en memoria: nada se escribe en claro.
+
+Las pruebas de 100 y 300 elementos en la interfaz del álbum privado (selección y borrado en el álbum) **no se midieron** con la misma instrumentación de fotogramas que la galería principal; solo las operaciones de datos de arriba y las pruebas funcionales con la interfaz real.
+
+### Búsqueda por contenido y otras herramientas
+
+Tiempos del modelo y tamaños en [semantic-search.md](semantic-search.md#evaluación-del-modelo): ≈ 43–62 ms por foto al indexar y +151 MB de memoria con los dos modelos cargados (emulador, no un teléfono), indexado en tandas solo cargando por defecto. Peso del APK: [semantic-search.md](semantic-search.md#peso-del-apk).
+
 ## Lo que no se pudo verificar
 
 - Las cifras son de un emulador; en un móvil real los valores absolutos serán mayores (los **ratios** deberían mantenerse).

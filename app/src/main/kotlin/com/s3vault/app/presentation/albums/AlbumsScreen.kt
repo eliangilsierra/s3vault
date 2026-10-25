@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -70,6 +71,7 @@ import com.s3vault.app.presentation.delete.DeleteViewModel
 import com.s3vault.app.presentation.delete.toDeleteEntry
 import com.s3vault.app.presentation.remote.RemoteCell
 import com.s3vault.app.presentation.remote.RemoteThumb
+import com.s3vault.app.presentation.smart.vector
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.sync.DeleteEntry
 import com.s3vault.app.sync.PreviewResult
@@ -83,7 +85,13 @@ import com.s3vault.app.presentation.ui.SecondaryButton
 import com.s3vault.app.presentation.ui.SlimProgress
 
 @Composable
-fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
+fun AlbumsScreen(
+    vm: AlbumsViewModel,
+    onOpenAlbum: (Long) -> Unit,
+    smart: com.s3vault.app.presentation.smart.SmartHome = com.s3vault.app.presentation.smart.SmartHome(),
+    onOpenSmart: (String) -> Unit = {},
+    onOpenSmartAll: () -> Unit = {},
+) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val importing by vm.isImporting.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
@@ -120,15 +128,20 @@ fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
             val list = albums
             when {
                 list == null -> GridSkeleton()
-                list.isEmpty() -> EmptyState(
-                    icon = Icons.Filled.PhotoAlbum,
-                    title = "Aún no hay álbumes",
-                    body = "Los álbumes son agrupaciones virtuales. Crear, renombrar o borrar un álbum nunca elimina fotos, ni del dispositivo ni de S3.",
-                ) {
-                    SecondaryButton(
-                        "Importar álbumes de S3", vm::importFromS3, Modifier.fillMaxWidth(),
-                        enabled = !importing, icon = Icons.Filled.CloudDownload,
-                    )
+                list.isEmpty() -> Column(Modifier.fillMaxSize()) {
+                    SmartStrip(smart, onOpenSmart, onOpenSmartAll)
+                    Box(Modifier.weight(1f)) {
+                        EmptyState(
+                            icon = Icons.Filled.PhotoAlbum,
+                            title = "Aún no hay álbumes",
+                            body = "Los álbumes son agrupaciones virtuales. Crear, renombrar o borrar un álbum nunca elimina fotos, ni del dispositivo ni de S3.",
+                        ) {
+                            SecondaryButton(
+                                "Importar álbumes de S3", vm::importFromS3, Modifier.fillMaxWidth(),
+                                enabled = !importing, icon = Icons.Filled.CloudDownload,
+                            )
+                        }
+                    }
                 }
                 else -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(156.dp),
@@ -136,6 +149,7 @@ fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(Space.m),
                     verticalArrangement = Arrangement.spacedBy(Space.l),
                 ) {
+                    item(key = "smart-strip", span = { GridItemSpan(maxLineSpan) }) { SmartStrip(smart, onOpenSmart, onOpenSmartAll, Modifier.padding(horizontal = 0.dp)) }
                     items(list, key = { it.id }) { AlbumTile(it, vm::loadPreview) { onOpenAlbum(it.id) } }
                 }
             }
@@ -144,6 +158,33 @@ fun AlbumsScreen(vm: AlbumsViewModel, onOpenAlbum: (Long) -> Unit) {
     }
     if (creating) {
         NameDialog("Nuevo álbum", "", "Crear", onConfirm = { vm.create(it); creating = false }, onDismiss = { creating = false })
+    }
+}
+
+/**
+ * The way into the smart albums from the Albums tab without adding a sixth tab: the few that have something in them, one tap
+ * away, and "Ver todos" for the rest (by year, custom, S3).
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SmartStrip(home: com.s3vault.app.presentation.smart.SmartHome, onOpen: (String) -> Unit, onAll: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(horizontal = Space.screen), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Álbumes inteligentes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            QuietButton("Ver todos", onAll)
+        }
+        val shown = home.builtIn.filter { it.count > 0 }.take(8)
+        if (shown.isNotEmpty()) {
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                rowItems(shown, key = { it.album.id }) { a ->
+                    androidx.compose.material3.AssistChip(
+                        onClick = { onOpen(a.album.id) },
+                        label = { Text("${a.album.title} · ${a.count}", maxLines = 1) },
+                        leadingIcon = { Icon(a.album.icon.vector(), null, Modifier.size(18.dp)) },
+                    )
+                }
+            }
+        }
     }
 }
 

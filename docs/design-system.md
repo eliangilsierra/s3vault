@@ -90,3 +90,11 @@ Ajustes → Almacenamiento y costes (`StorageCostScreen`). Misma estructura que 
 - Las animaciones duran entre 120 y 220 ms y se desactivan si el usuario apagó las animaciones del sistema.
 - El botón Atrás sale primero del modo selección.
 - Las pantallas con secretos mantienen `FLAG_SECURE`; la política de credenciales y los textos de seguridad no cambian.
+
+## Herramientas de la biblioteca y álbumes privados
+
+- **Entrada única:** Galería → ⋮ → «Herramientas de la biblioteca» (también desde Ajustes). El *hub* agrupa por lo que toca cada herramienta (Respaldo, Organizar, Este dispositivo, Privacidad) con una línea que dice qué hace y qué toca; las cinco pestañas no cambian.
+- **Lenguaje local/nube explícito:** «en este dispositivo», «en S3», «solo en S3», con texto además del color; los estados usan los mismos `Tone` (icono + palabras) y `StatusBanner` que el resto de la app.
+- **Acciones destructivas:** siempre `ConfirmDialog` con el recuento y la consecuencia, botón destructivo en color de error y «Cancelar» a la izquierda; nada destructivo es el botón primario por defecto.
+- **Pantallas privadas:** sin capturas (`FLAG_SECURE`), cuadrícula de miniaturas descifradas en memoria, visor con el mismo `ZoomableBox` y los mismos controles sobre degradado que el visor normal, y un estado «Bloqueado» sin ningún dato cuando el vault se cierra con una pantalla abierta.
+- Objetivos táctiles ≥ 48 dp, `contentDescription` en cada celda (nombre de la foto) y en cada icono, selección con marca y color (no solo color), y diseños que se estrechan a `Space.maxContent` en pantallas grandes.

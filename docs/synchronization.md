@@ -131,3 +131,9 @@ Se descartó un manifiesto JSON en S3: exigiría resolver escrituras concurrente
 
 - `RemoteCatalog.refresh` lee `ListObjectsV2` página a página y **escribe cada página en Room al recibirla**: los primeros objetos aparecen mientras llega el resto y nunca se retiene más que una página. Si el listado falla o se cancela, las páginas ya escritas se conservan, **no se purga nada** y se guarda `ListingResult(complete = false)` para que la interfaz avise de que la lista puede ser incompleta; solo un listado que llega al final retira de la caché los objetos que ya no existen (la caché; S3 nunca se toca).
 - Cada fila guarda además `effectiveDateMs`, `dateSource`, `dayKey` (0 si no hay fecha de captura) y `uploadDayKey`. Una fecha de captura ya conocida nunca se degrada por un listado posterior. Qué es una fecha de captura y cómo se obtiene sin peticiones adicionales: [smart-gallery.md](smart-gallery.md#fechas-qué-es-una-fecha-de-captura).
+
+## Centro de sincronización y tareas
+
+La pestaña «Respaldo» es el centro de sincronización: muestra las mismas filas de Room que usa el motor (`QUEUED`, `UPLOADING`, `FAILED`…) más el resumen persistido de la última ejecución de cada tarea (`background_jobs`: respaldo, restauración, auditoría, duplicados, búsqueda por contenido, descarga del modelo). No mantiene estado propio: lo que ves tras matar la app es lo que hay en la base de datos. Cancelar un elemento en cola solo lo saca de la cola local (no toca S3), y reintentar vuelve a encolar un fallo. Al arrancar, una tarea que figuraba como en curso en un proceso anterior se marca como interrumpida. Detalle de las demás herramientas en [library-tools.md](library-tools.md).
+
+El marcador de versión de S3 (ETag) se guarda al respaldar y al listar **solo para comparar por igualdad** (¿se reemplazó el objeto?). Nunca se interpreta como MD5: la integridad sigue apoyándose en el SHA-256 que se envió y se verificó.

@@ -36,6 +36,8 @@ data class RemoteListing(
     val lastModifiedMs: Long,
     /** S3 storage class reported by the listing (STANDARD, GLACIER_IR...); null when the listing did not say. */
     val storageClass: String? = null,
+    /** The listing's ETag without quotes. An opaque version marker: never read as an MD5 (multipart and encryption change that). */
+    val etag: String? = null,
 )
 
 /** A finished listing and how many `ListObjectsV2` requests it took. Behaves as a plain list. */

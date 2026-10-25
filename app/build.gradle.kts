@@ -21,8 +21,8 @@ android {
         applicationId = "com.s3vault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -52,6 +52,11 @@ android {
             matchingFallbacks += listOf("release")
         }
         release {
+            // ONNX Runtime (the optional on-device search) ships a native library per ABI: 19-27 MiB each on ARM, 33 MiB on x86.
+            // Phones that run Android 10+ are 64-bit ARM, so release carries only arm64-v8a (33.5 MiB APK). Pass
+            // `-PreleaseAbis=arm64-v8a,armeabi-v7a` for 32-bit ARM (53 MiB) or `...,x86_64` to run a release build on the emulator
+            // (the `benchmark` type keeps every ABI).
+            ndk { abiFilters += ((findProperty("releaseAbis") as String?) ?: "arm64-v8a").split(",").map { it.trim() } }
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -128,6 +133,9 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
+
+    // On-device semantic search only (optional feature; the model is downloaded by the user, never bundled). MIT licence.
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.aws.s3)
 

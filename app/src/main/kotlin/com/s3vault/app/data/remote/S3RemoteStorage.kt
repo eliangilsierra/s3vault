@@ -179,7 +179,7 @@ class S3RemoteStorage(
             val page = ArrayList<RemoteListing>()
             resp.contents.orEmpty().forEach { o ->
                 val k = o.key ?: return@forEach
-                page += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L, o.storageClass?.value)
+                page += RemoteListing(k, o.size ?: 0L, o.lastModified?.epochSeconds?.times(1000) ?: 0L, o.storageClass?.value, o.eTag?.trim('"'))
             }
             onPage(page)
             token = if (resp.isTruncated == true) resp.nextContinuationToken else null

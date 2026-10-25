@@ -3,3 +3,7 @@
 -dontwarn javax.naming.**
 -dontwarn org.ietf.jgss.**
 -dontwarn io.netty.**
+
+# ONNX Runtime is called through JNI by class and field name.
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**

@@ -66,6 +66,7 @@ object LocalLibrarySql {
         }
         if (q.filters.folders.isNotEmpty()) inList("folderName", q.filters.folders, w)
         if (q.filters.undatedOnly) w.and("dateSource = 'FALLBACK'")
+        q.filters.minSizeBytes?.let { w.and("sizeBytes >= ?", it) }
         return w
     }
 
@@ -157,6 +158,9 @@ object CloudLibrarySql {
             CloudAvailability.CLOUD_ONLY -> w.and("NOT $ALSO_LOCAL")
             null -> Unit
         }
+        // Objects with no capture date are the ones listed apart (dayKey 0).
+        if (q.filters.undatedOnly) w.and("dayKey = 0")
+        q.filters.minSizeBytes?.let { w.and("sizeBytes >= ?", it) }
         return w
     }
 
