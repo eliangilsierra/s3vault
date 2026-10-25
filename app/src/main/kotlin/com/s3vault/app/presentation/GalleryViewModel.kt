@@ -220,7 +220,6 @@ class GalleryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun isSectionSelected(key: Int): Boolean = key in selectedSections.value
     val sectionSelection: StateFlow<Set<Int>> get() = selectedSections
 
     /** The selected photos, read from the database (the grid only holds a page at a time). Reading and mapping run off the main thread. */

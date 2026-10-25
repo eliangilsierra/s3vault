@@ -87,7 +87,7 @@ class RemoteCatalog(
         dao.applyLocalCaptureDates()
         // Only a listing that reached the end becomes an inventory: a partial one would understate the bucket.
         if (inventory != null) {
-            inventoryStore?.save(inventory.build(ctx.config?.region.orEmpty(), ctx.config?.bucket.orEmpty(), ctx.keys.prefix, nowMs(), pages))
+            inventoryStore.save(inventory.build(ctx.config?.region.orEmpty(), ctx.config?.bucket.orEmpty(), ctx.keys.prefix, nowMs(), pages))
         }
         onListed(ListingResult(nowMs(), complete = true, count = seen.size, source = sourceOf(ctx)))
         return seen.size

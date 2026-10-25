@@ -104,6 +104,7 @@ class SyncCenterViewModel(private val c: AppContainer) : ViewModel() {
     ) { v ->
         @Suppress("UNCHECKED_CAST")
         val jobs = v[5] as List<JobEntity>
+        @Suppress("UNCHECKED_CAST")
         val day = v[8] as Pair<Int, Int>
         SyncCenterState(
             counts = v[0] as SyncCounts,
@@ -203,8 +204,5 @@ class SyncCenterViewModel(private val c: AppContainer) : ViewModel() {
         const val PAGE = 60
     }
 }
-
-/** Convenience for screens that only need the domain model of a row. */
-internal fun MediaItemEntity.asRow(): SyncRow = SyncRow.Local(toDomain())
 
 internal val SyncState.isInFlight: Boolean get() = this == SyncState.UPLOADING || this == SyncState.VERIFYING

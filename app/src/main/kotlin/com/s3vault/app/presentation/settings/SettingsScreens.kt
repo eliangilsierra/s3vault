@@ -221,7 +221,7 @@ fun S3SettingsScreen(vm: S3SettingsViewModel, onBack: () -> Unit, onSecurity: ()
                 shape = MaterialTheme.shapes.medium,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-                modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryEditable),
+                modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryEditable),
             )
             val matches = ConfigValidator.knownRegions.filter { it.contains(s.form.region) }
             if (matches.isNotEmpty()) {

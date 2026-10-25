@@ -137,7 +137,6 @@ class ModelPackStore(private val root: File) {
     /** Removes the whole pack from the device (the generated vectors are separate and are removed by the user's choice). */
     fun delete(pack: ModelPack) { dir(pack).deleteRecursively() }
 
-    fun bytesOnDisk(pack: ModelPack): Long = dir(pack).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 }
 
 /** Vectors are stored as signed bytes with one scale per vector: about 0.5 KB per picture instead of 2 KB, with no visible change in ranking. */
@@ -173,7 +172,9 @@ data class Scored(val id: Long, val score: Float)
 class TopK(private val k: Int) {
     private val heap = java.util.PriorityQueue<Scored>(k + 1, compareBy { it.score })
     fun offer(id: Long, score: Float) {
-        if (heap.size < k) heap.add(Scored(id, score)) else if (score > heap.peek().score) { heap.poll(); heap.add(Scored(id, score)) }
+        if (heap.size < k) { heap.add(Scored(id, score)); return }
+        val worst = heap.peek()
+        if (worst != null && score > worst.score) { heap.poll(); heap.add(Scored(id, score)) }
     }
     fun best(): List<Scored> = heap.sortedWith(compareByDescending<Scored> { it.score }.thenBy { it.id })
 }

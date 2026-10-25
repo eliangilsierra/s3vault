@@ -83,7 +83,7 @@ import com.s3vault.app.presentation.smart.SmartViewerViewModel
 import androidx.compose.material.icons.filled.ContentCopy
 import com.s3vault.app.presentation.duplicates.DuplicatesScreen
 import com.s3vault.app.presentation.duplicates.DuplicatesViewModel
-import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import com.s3vault.app.presentation.space.SpaceRecoveryScreen
 import com.s3vault.app.presentation.space.SpaceRecoveryViewModel
 import com.s3vault.app.presentation.integrity.IntegrityScreen
@@ -119,7 +119,7 @@ private val TabRoutes = Tab.entries.map { it.route }.toSet()
 /** The library tools, in the order the hub shows them. Each entry is a route; the hub never knows what a tool does. */
 private val LibraryTools = listOf(
     Tool("sync", "Centro de sincronización", "Qué está en este dispositivo, en S3 o en camino, y por qué algo falló", Icons.Filled.CloudSync, "Respaldo"),
-    Tool("integrity", "Auditoría del respaldo", "Comprueba que S3 sigue teniendo lo que respaldaste (solo lee)", Icons.Filled.FactCheck, "Respaldo"),
+    Tool("integrity", "Auditoría del respaldo", "Comprueba que S3 sigue teniendo lo que respaldaste (solo lee)", Icons.AutoMirrored.Filled.FactCheck, "Respaldo"),
     Tool("semantic", "Buscar por contenido", "Encuentra fotos por lo que se ve. Opcional, en tu móvil, sin enviar nada", Icons.Filled.ImageSearch, "Organizar"),
     Tool("smart", "Álbumes inteligentes", "Favoritas, capturas, vídeos, grandes, sin respaldar, por año… y los tuyos", Icons.Filled.AutoAwesome, "Organizar"),
     Tool("private", "Álbumes privados", "Fotos cifradas que solo se abren con tu huella o PIN. Copia, no mueve ni borra", Icons.Filled.Lock, "Privacidad"),

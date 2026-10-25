@@ -40,7 +40,6 @@ data class SyncCounts(
     val restoreFailed: Int = 0,
 ) {
     val activity: Int get() = uploading + queued + failed
-    val pendingUploads: Int get() = queued + uploading
 
     /** Files on this device that the backup knows about. */
     val localTotal: Int get() = localOnly + queued + uploading + backedUp + failed

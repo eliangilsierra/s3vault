@@ -30,8 +30,8 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FactCheck
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.FactCheck
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Checkbox
@@ -204,9 +204,9 @@ private fun Summary(s: IntegrityState) {
                 return@Column
             }
             val (tone, headline, icon) = when {
-                a.status == AuditStatus.RUNNING -> Triple(Tone.Info, "Auditando…", Icons.Filled.FactCheck)
+                a.status == AuditStatus.RUNNING -> Triple(Tone.Info, "Auditando…", Icons.AutoMirrored.Filled.FactCheck)
                 a.status == AuditStatus.FAILED -> Triple(Tone.Warning, "La última auditoría no terminó", Icons.Filled.WarningAmber)
-                a.status == AuditStatus.CANCELLED || a.status == AuditStatus.INTERRUPTED -> Triple(Tone.Neutral, "Auditoría detenida", Icons.Filled.FactCheck)
+                a.status == AuditStatus.CANCELLED || a.status == AuditStatus.INTERRUPTED -> Triple(Tone.Neutral, "Auditoría detenida", Icons.AutoMirrored.Filled.FactCheck)
                 s.problems > 0 -> Triple(Tone.Error, if (s.problems == 1) "1 objeto con problemas" else "${s.problems} objetos con problemas", Icons.Filled.ErrorOutline)
                 else -> Triple(Tone.Success, "Sin problemas conocidos", Icons.Filled.CheckCircle)
             }
@@ -265,18 +265,18 @@ private fun Actions(s: IntegrityState, vm: IntegrityViewModel) {
                 SlimProgress(null)
                 SecondaryButton("Cancelar auditoría", vm::cancelAudit, Modifier.fillMaxWidth())
             } else {
-                PrimaryButton("Auditar con la lista de S3", { vm.startListing(reuse = false) }, Modifier.fillMaxWidth(), enabled = ready, icon = Icons.Filled.FactCheck)
+                PrimaryButton("Auditar con la lista de S3", { vm.startListing(reuse = false) }, Modifier.fillMaxWidth(), enabled = ready, icon = Icons.AutoMirrored.Filled.FactCheck)
                 CostLine(
                     "${formatRequests(listCost.requests, "LIST")}${listCost.usd?.let { " (≈ ${formatUsdBrief(it)})" } ?: ""}. " +
                         "Detecta objetos que faltan, cambios de tamaño y objetos reemplazados.",
                 )
                 if (reusable) {
-                    SecondaryButton("Usar la lista guardada (${formatAge(listing!!.atMs)}, sin coste)", { vm.startListing(reuse = true) }, Modifier.fillMaxWidth(), enabled = ready)
+                    SecondaryButton("Usar la lista guardada (${formatAge(listing.atMs)}, sin coste)", { vm.startListing(reuse = true) }, Modifier.fillMaxWidth(), enabled = ready)
                     CostLine("Sin solicitudes nuevas, pero compara con lo que S3 tenía ${formatAge(listing.atMs)}.")
                 }
                 SecondaryButton(
                     if (s.deepPlan > 0) "Verificación profunda (${formatCount(s.deepPlan)} objetos)" else "Verificación profunda",
-                    vm::startDeep, Modifier.fillMaxWidth(), enabled = ready && s.deepPlan > 0, icon = Icons.Filled.FactCheck,
+                    vm::startDeep, Modifier.fillMaxWidth(), enabled = ready && s.deepPlan > 0, icon = Icons.AutoMirrored.Filled.FactCheck,
                 )
                 CostLine(
                     if (s.deepPlan > 0) {
@@ -319,7 +319,7 @@ private fun Limitations() {
             Modifier.fillMaxWidth().heightIn(min = Space.touch).clickable(role = Role.Button, onClickLabel = if (open) "Ocultar" else "Mostrar") { open = !open },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s),
         ) {
-            Icon(Icons.Filled.HelpOutline, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Filled.HelpOutline, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Qué puede y qué no puede comprobar", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -360,7 +360,7 @@ private fun ResultRow(row: IntegrityRow, selected: Boolean, selecting: Boolean, 
         IntegrityVerdict.VERIFIED -> Tone.Success to Icons.Filled.CheckCircle
         IntegrityVerdict.MISSING -> Tone.Error to Icons.Filled.ErrorOutline
         IntegrityVerdict.CHANGED -> Tone.Warning to Icons.Filled.WarningAmber
-        IntegrityVerdict.UNKNOWN -> Tone.Neutral to Icons.Filled.HelpOutline
+        IntegrityVerdict.UNKNOWN -> Tone.Neutral to Icons.AutoMirrored.Filled.HelpOutline
         IntegrityVerdict.STALE_RECORD -> Tone.Warning to Icons.Filled.WarningAmber
     }
     Surface(

@@ -76,6 +76,7 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
         val auth = v[4] as AuthStatus
         val changes = v[5] as PendingChanges
         val busy = v[6] as Boolean
+        @Suppress("UNCHECKED_CAST")
         val err = v[7] as Pair<String, Boolean>?
         val now = v[8] as Long
         val inv = stored?.takeIf { cfg != null && it.matches(cfg) }
@@ -114,5 +115,4 @@ class StorageCostViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun dismissError() { error.value = null }
 }
