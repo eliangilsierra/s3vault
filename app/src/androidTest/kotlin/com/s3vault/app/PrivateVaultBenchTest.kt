@@ -51,11 +51,13 @@ class PrivateVaultBenchTest {
 
     @Test fun rawEncryptionThroughput() {
         val key = VaultCrypto.newKey()
-        val data = ByteArray(32 * 1024 * 1024).also { Random(1).nextBytes(it) }
+        // 16 MiB: with 32 MiB this benchmark held about 160 MB at once (input, sealed copy, a doubling output buffer and its copy) on a 192 MB
+        // heap, so it only passed by a few MB and failed as soon as the app process carried anything else. Throughput does not depend on the size.
+        val data = ByteArray(16 * 1024 * 1024).also { Random(1).nextBytes(it) }
         var sealed = ByteArray(0)
         val e = measureNs { sealed = ByteArrayOutputStream(data.size + 1_000_000).also { VaultCrypto.encrypt(key, ByteArrayInputStream(data), it) }.toByteArray() }
         val d = measureNs { VaultCrypto.decryptToBytes(key, ByteArrayInputStream(sealed)) }
-        log("crypto 32 MiB: encrypt ${e / 1_000_000} ms (%.0f MiB/s), decrypt ${d / 1_000_000} ms (%.0f MiB/s)".format(32e9 / e * 1.0 / 1.048576, 32e9 / d / 1.048576))
+        log("crypto 16 MiB: encrypt ${e / 1_000_000} ms (%.0f MiB/s), decrypt ${d / 1_000_000} ms (%.0f MiB/s)".format(16e9 / e * 1.0 / 1.048576, 16e9 / d / 1.048576))
         assertTrue(sealed.size > data.size)
     }
 
