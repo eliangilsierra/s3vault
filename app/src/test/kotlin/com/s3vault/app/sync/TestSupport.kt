@@ -215,6 +215,12 @@ class FakeScheduler : WorkScheduler {
     override fun configureSemanticSchedule(enabled: Boolean, onlyCharging: Boolean) { semanticSchedule = enabled }
     override fun kickModelDownload(wifiOnly: Boolean) { modelKicks++ }
     override fun cancelModelDownload() { modelCancels++ }
+    val faceKicks = mutableListOf<Boolean>()
+    var faceCancels = 0
+    var faceSchedule: Boolean? = null
+    override fun kickFaceIndex(onlyCharging: Boolean, continuation: Boolean) { faceKicks += onlyCharging }
+    override fun cancelFaceIndex() { faceCancels++ }
+    override fun configureFaceSchedule(enabled: Boolean, onlyCharging: Boolean) { faceSchedule = enabled }
     var duplicateKicks = 0
     var duplicateCancels = 0
     override fun kickDuplicateScan(continuation: Boolean) { duplicateKicks++ }

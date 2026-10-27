@@ -68,7 +68,11 @@ class AppContainer(private val context: Context) {
     val mediaChanges: MediaChangeTracker by lazy { MediaChangeTracker(context).also { it.start() } }
 
     val library: LibraryRepository by lazy {
-        LibraryRepository(mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() }, changes = mediaChanges)
+        LibraryRepository(
+            mediaSource, MediaIndexer(db), { mediaAccess() }, beforeScan = { dayKeys.ensureCurrentZone() }, changes = mediaChanges,
+            // New photos are noticed by the same library scan as always; the face index only gets woken when its feature is on.
+            onChanged = { if (settings.faceEnabled.first()) scheduler.kickFaceIndex(settings.faceOnlyCharging.first()) },
+        )
     }
     val catalog by lazy {
         RemoteCatalog(
@@ -135,6 +139,43 @@ class AppContainer(private val context: Context) {
     }
     val semanticIndexer by lazy { com.s3vault.app.sync.SemanticIndexer(db, embedderProvider, jobs) }
     val semanticSearcher by lazy { com.s3vault.app.sync.SemanticSearcher(db) }
+
+    // ---- People: face grouping and per-person automatic backup. Everything here is local; see docs/face-grouping.md.
+    /** One lock for every writer of the face index (analysis, grouping, the user's corrections, the backup rules). */
+    val faceLock by lazy { com.s3vault.app.sync.FaceIndexLock() }
+    /** Test-only: replaces the Keystore-backed key store, so tests need no Keystore. Never set in production. */
+    @androidx.annotation.VisibleForTesting
+    var faceKeysOverride: com.s3vault.app.domain.faces.DataKeyStore? = null
+    private val faceKeys by lazy { com.s3vault.app.data.faces.SecretDataKeyStore(KeystoreSecretStore(context, keyAlias = "s3vault_face_key_v1")) }
+    val faceVault: com.s3vault.app.domain.faces.FaceVault by lazy {
+        com.s3vault.app.domain.faces.AesGcmFaceVault(object : com.s3vault.app.domain.faces.DataKeyStore {
+            override fun load() = (faceKeysOverride ?: faceKeys).load()
+            override fun destroy() = (faceKeysOverride ?: faceKeys).destroy()
+        })
+    }
+    val faceGrouping by lazy { com.s3vault.app.sync.FaceGroupingStore(db, faceVault) }
+    val faceBackup by lazy { com.s3vault.app.sync.FaceBackupService(db, backup, settings, faceGrouping, faceLock, jobs) }
+    val facePeople by lazy {
+        com.s3vault.app.sync.FacePeopleController(db, faceGrouping, faceVault, faceLock, onChanged = { ids -> ids.forEach { faceBackup.evaluate(it) } })
+    }
+    val faceImages by lazy { com.s3vault.app.data.faces.AndroidFaceImageSource(context) }
+    /** Face crops for the screens: cut from the photo when drawn and kept only in memory, never written to disk. */
+    val faceCrops by lazy { com.s3vault.app.data.faces.FaceCrops(context) }
+    /** Test-only: a scripted analyzer in place of the ONNX models. Never set in production. */
+    @androidx.annotation.VisibleForTesting
+    var faceAnalyzerOverride: (suspend () -> com.s3vault.app.domain.faces.FaceAnalyzer?)? = null
+    val faceEngines = com.s3vault.app.sync.FaceEngineProvider {
+        faceAnalyzerOverride?.invoke()
+            ?: com.s3vault.app.data.faces.FaceModels.open(context, threadsPerSession = 1)?.let { com.s3vault.app.domain.faces.FacePipeline(it) }
+    }
+    val faceIndexer by lazy {
+        com.s3vault.app.sync.FaceIndexer(db, faceVault, faceEngines, faceImages, faceGrouping, faceLock, jobs, afterRun = { faceBackup.evaluateAll() }, freeBytes = { context.filesDir.usableSpace })
+    }
+
+    /** How many photos the analysis works on at once: one when the user asked to be gentle, otherwise a few according to the device. */
+    suspend fun faceWorkers(): Int =
+        if (settings.faceGentle.first()) 1 else (Runtime.getRuntime().availableProcessors() / 4).coerceIn(1, 3)
+
     val duplicateScanner by lazy {
         com.s3vault.app.sync.DuplicateScanner(db, mediaSource, com.s3vault.app.data.local.AndroidImageSignature(context), jobs)
     }

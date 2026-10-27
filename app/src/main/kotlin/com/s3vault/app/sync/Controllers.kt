@@ -29,6 +29,8 @@ class LibraryRepository(
     private val beforeScan: suspend () -> Unit = {},
     /** When given, a non-forced refresh is skipped while MediaStore and the permission are as the last scan saw them. */
     private val changes: ChangeSignal? = null,
+    /** Told after a scan that found new or changed files, so work that depends on them (the face index) can be woken. */
+    private val onChanged: suspend (IndexResult) -> Unit = {},
 ) {
     private val mutex = Mutex()
     private var scannedVersion = -1L
@@ -55,6 +57,7 @@ class LibraryRepository(
         scannedVersion = version ?: -1L
         scannedAccess = a
         hasScanned = true
+        if (result.added > 0 || result.updated > 0) onChanged(result)
         result
     }
 }
@@ -144,7 +147,8 @@ class BackupController(
         const val BATCH = 400
     }
 
-    private suspend fun afterEnqueue(n: Int) {
+    /** Wakes the backup worker after items were queued (unless the user paused the backup). Used by the face-based rules too. */
+    suspend fun afterEnqueue(n: Int) {
         val s = settings.currentBackup()
         if (n > 0 && !s.paused) scheduler.kickBackup(s.wifiOnly)
     }
