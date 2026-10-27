@@ -1,6 +1,6 @@
 # Ficha de Google Play: borrador en español
 
-> **Estado: borrador para revisar. No está publicado ni enviado a revisión.** Todo lo que sigue describe lo que la app hace hoy (versión 0.4.1); si cambia el comportamiento, hay que cambiar el texto. Los límites de longitud se comprobaron con la ayuda oficial de Play Console cuando la página los indica (descripción corta: 80 caracteres; icono: 512×512 PNG de 32 bits; gráfico de funciones: 1024×500; entre 2 y 8 capturas por tipo de dispositivo). El límite del nombre (30 caracteres) y de la descripción completa (4 000) es el habitual de Play, pero **no apareció en la página consultada: confírmalo en Play Console al pegarlos.**
+> **Estado: borrador para revisar. No está publicado ni enviado a revisión.** Todo lo que sigue describe lo que la app hace hoy (versión 0.5.0); si cambia el comportamiento, hay que cambiar el texto. Los límites de longitud se comprobaron con la ayuda oficial de Play Console cuando la página los indica (descripción corta: 80 caracteres; icono: 512×512 PNG de 32 bits; gráfico de funciones: 1024×500; entre 2 y 8 capturas por tipo de dispositivo). El límite del nombre (30 caracteres) y de la descripción completa (4 000) es el habitual de Play, pero **no apareció en la página consultada: confírmalo en Play Console al pegarlos.**
 
 ## Datos básicos
 
@@ -39,12 +39,14 @@ HERRAMIENTAS
 • Liberar espacio: solo ofrece fotos verificadas en S3 y las vuelve a comprobar antes de borrarlas del móvil.
 • Duplicados y fotos parecidas, para elegir cuál conservar.
 • Álbumes privados: copias cifradas que se abren con tu huella o PIN. Aviso: si pierdes la clave del dispositivo (por ejemplo, quitando el bloqueo de pantalla), no hay forma de recuperarlas.
+• Personas (opcional): agrupa tus fotos por rostro, en tu móvil y sin enviar nada, y elige de quién respaldar las fotos nuevas. Los grupos son estimaciones que tú revisas y corriges.
 • Búsqueda por contenido (opcional): encuentra fotos por lo que se ve, con un modelo que se ejecuta en tu móvil. Requiere una descarga única de unos 148 MiB.
 
 PRIVACIDAD Y CONTROL
 • Sin cuentas, sin analítica, sin anuncios, sin rastreadores.
 • Tus credenciales de AWS se guardan cifradas en el dispositivo y no se envían al desarrollador.
 • Conexión cifrada (HTTPS) con tu bucket.
+• El análisis de rostros de «Personas» se ejecuta en el móvil: ni las fotos ni los datos faciales salen de él, y puedes borrarlos cuando quieras.
 • Incluye ayuda y un tutorial para configurar S3 paso a paso.
 
 LIMITACIONES
@@ -53,6 +55,8 @@ LIMITACIONES
 • Las credenciales temporales de AWS caducan y la app no las renueva sola.
 • La app necesita Android 10 o superior y un dispositivo de 64 bits (ARM).
 ```
+
+> Las líneas sobre «Personas» solo valen cuando se publique una versión que la incluya **y** se hayan resuelto sus bloqueos ([face-grouping.md](../face-grouping.md#bloqueos-antes-de-publicar-en-google-play)). Con ella el paquete pesa ≈ 51 MiB (APK) en lugar de ≈ 34 MiB.
 
 **Comprobaciones de veracidad.** Cada afirmación está respaldada en el código y en las pruebas: ver [library-tools.md](../library-tools.md), [private-albums.md](../private-albums.md), [semantic-search.md](../semantic-search.md), [security.md](../security.md) y [testing.md](../testing.md). Frases que **no** debe añadir nadie sin cambiar el código: «copias automáticas desde el primer momento», «cifrado de extremo a extremo», «privacidad absoluta», «sincronización instantánea», «recuperación garantizada».
 
@@ -66,7 +70,7 @@ LIMITACIONES
 
 Capturas incluidas: galería, selección con «Respaldar en S3», bienvenida del tutorial, «Cómo se guardan tus fotos», herramientas, ajustes y ayuda. **Faltan** (no se pueden mostrar sin una cuenta de AWS real): pestañas Respaldo y S3 con datos reales. Se recomienda añadirlas con un bucket de pruebas del propietario, sin fotos privadas. Las capturas de tableta (7 y 10 pulgadas) son opcionales; no se han hecho.
 
-## Texto para «Novedades» de la versión 0.4.1 (máx. 500 caracteres)
+## Texto para «Novedades» de la versión 0.5.0 (máx. 500 caracteres)
 
 ```
 • Tutorial de bienvenida y sección de ayuda.

@@ -27,6 +27,7 @@
 - Credenciales: solo cifradas (archivo + Keystore).
 - Álbumes privados: `filesDir/vault/*.v|.t` (fotos y miniaturas cifradas con nombres aleatorios) y tablas `private_*` (clave del vault envuelta por el Keystore, nombres de álbum y metadatos cifrados). Sin texto claro: hay una prueba que lo comprueba en todas las columnas y archivos.
 - Búsqueda por contenido (opcional): el modelo (≈ 150 MB, `filesDir/models`) y un vector de 512 valores por foto (`semantic_embeddings`). Los vectores describen el contenido de las fotos: se pueden borrar desde la propia pantalla y se excluyen de las copias de Android.
+- **Personas (opcional):** por cada rostro, su posición y una huella de 128 números **sellada con AES-256-GCM** (`faces.sealed`), y el centro de cada grupo (`people.centroidSealed`); nombres, correcciones y reglas en claro en la base privada. La clave de datos está cifrada por el Keystore en el directorio *no-backup*. No se guardan recortes de caras. Detalle y límites en [face-grouping.md](face-grouping.md#privacidad-y-datos).
 - Copias de seguridad de Android desactivadas (`allowBackup=false`, reglas de extracción vacías): ni el índice ni las credenciales viajan a la nube de Google.
 
 **En S3 (tu bucket)**
@@ -38,6 +39,8 @@
 
 **Visible para quien tenga permisos sobre el bucket**: todo lo anterior (contenido de las fotos, nombres de archivo, fechas de captura, hashes, y los tiempos de subida). Con SSE-S3/SSE-KMS los datos están cifrados *en reposo* en AWS, pero cualquier identidad autorizada los lee en claro. **No es cifrado de extremo a extremo.**
 
+**Datos faciales en S3:** ninguno. Ni huellas, ni recortes, ni grupos, ni nombres; el respaldo por persona solo decide qué fotos (enteras, como siempre) entran en la cola.
+
 **Para el desarrollador de la app**: nada. No hay servidor, cuenta, analítica ni telemetría; ningún dato sale del teléfono salvo hacia tu bucket.
 
 ## Reglas de eliminación
@@ -48,6 +51,7 @@ Ver también [cloud-previews.md](cloud-previews.md#borrado-reglas-de-seguridad).
 - «Eliminar de S3» **no** toca el archivo local: la foto sigue en el teléfono, queda marcada y el respaldo automático no la vuelve a subir.
 - No existe «eliminar de ambos sitios» en un solo paso.
 - Quitar una foto de un álbum o eliminar un álbum solo borra la agrupación.
+- Quitar una foto de una persona, combinar, separar, ocultar o eliminar un grupo, quitar una regla de respaldo y **borrar el índice facial** solo cambian el índice facial: ninguna foto, copia de seguridad ni objeto de S3 se borra, y lo ya puesto en la cola sigue en ella salvo que se use «Deshacer».
 - Cerrar sesión/desconectar y desinstalar no ordenan borrado remoto (desconectar sí vacía la caché de vistas previas).
 - Con acceso parcial a fotos (Android 14+), la ausencia de una foto en la lectura **nunca** se interpreta como borrado.
 - Restaurar nunca sobrescribe: MediaStore asigna un nombre nuevo si hay colisión, y la app pide confirmación cuando ya existe una copia local del mismo contenido.
@@ -85,4 +89,5 @@ Qué se comprobó, cómo y con qué resultado. «Comprobado» significa que se e
 - **Álbumes privados:** si se pierde la clave del dispositivo, no hay recuperación (por diseño).
 - **Un tercero con acceso a la cuenta de AWS del usuario** puede leer o borrar lo que su política permita, con o sin la app.
 - **Descarga opcional del modelo:** el contenido está fijado por tamaño y SHA-256, pero se descarga de `huggingface.co`; si ese servicio cambiara de URL, la descarga falla (no hay descarga insegura de reemplazo).
+- **Personas:** la huella facial es un dato biométrico; el cifrado la protege de una copia de la base de datos, **no** de código que corra dentro de la app ni de un móvil con root, y la clave no exige desbloqueo (el análisis corre en segundo plano). Los nombres de las personas no están cifrados. Los grupos pueden equivocarse (gemelos, parientes): una regla de respaldo mal confirmada puede subir a S3 la foto de otra persona; por eso lo dudoso se pregunta y el usuario confirma los grupos.
 - **No hay prueba de penetración ni revisión independiente.** No debe interpretarse la ausencia de hallazgos como garantía.

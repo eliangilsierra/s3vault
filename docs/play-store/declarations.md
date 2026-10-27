@@ -43,11 +43,13 @@ Según la política oficial (consultada el 25 de octubre de 2026), las apps que 
 | Apps del gobierno / financieras / de salud / de noticias / COVID-19 | No | |
 | Eliminación de cuentas | No aplica: la app no tiene cuentas | |
 | Servicios en primer plano | No se usan | Si Play lo pregunta por el permiso que añade WorkManager, indicar que la app no inicia servicios en primer plano. Si se prefiere quitarlo del manifiesto, es un cambio de configuración que habría que probar; no se ha hecho. |
+| Datos sensibles: rostros («Personas») | La función es opcional, desactivada por defecto y precedida de una explicación dentro de la app; **no se piden permisos nuevos** (usa las fotos que el usuario ya concedió) y nada sale del dispositivo | Revisar la política de «Datos de usuario» vigente el día del envío. Que se procese en local no elimina las obligaciones legales sobre datos biométricos: ver [face-grouping.md](../face-grouping.md#bloqueos-antes-de-publicar-en-google-play). **Bloqueante hasta revisión legal** — o publica la compilación **sin la función** (`-PwithFaces=false`): entonces esta fila no aplica y no hay datos faciales que declarar. |
 | Tipos de dispositivo | Teléfonos y tabletas con Android 10+ y arm64 | `minSdk 29`; el paquete solo lleva `arm64-v8a`, por lo que **no** se instala en dispositivos x86 ni de 32 bits (decisión por el tamaño de ONNX Runtime; ver [semantic-search.md](../semantic-search.md#peso-del-apk)). |
 
 ## 4. Requisitos de la versión (técnico)
 
 - `targetSdk 36`: cumple el requisito vigente (los envíos nuevos y las actualizaciones deben apuntar a Android 16, API 36, desde el 31 de agosto de 2026).
+- Tamaño: con «Personas» el APK arm64 pasa a 51,3 MiB y el AAB a 35,8 MiB ([release.md](../release.md)); lejos de los límites de Play.
 - Formato: **Android App Bundle** (`app-release.aab`); ver [release.md](../release.md).
 - 64 bits: obligatorio, cumplido (`arm64-v8a`).
 - Firma: **Play App Signing**; ver [release-checklist.md](release-checklist.md) (la decisión sobre la clave de firma es del propietario).

@@ -2,6 +2,8 @@
 
 ## Resultado de la última ejecución
 
+> **Actualización del 26 de octubre de 2026 (función «Personas»).** Unitarias: **678 pruebas, 0 fallos** (119 son de Personas; repetidas el 27 de octubre tras añadir el interruptor `-PwithFaces`). Instrumentadas en el emulador (Android 17 / API 37, x86_64) con `am instrument`: **148 pruebas, 0 fallos** (131 anteriores + 17 nuevas). Lint: 0 errores, 54 avisos. Release con R8: compila (APK arm64 51,3 MiB; AAB 35,8 MiB) y la compilación minificada para x86_64 se comprobó en el emulador (análisis, grupo y hoja de regla). La tabla de abajo es la de la ronda anterior; el detalle de lo nuevo está en [«Personas»](#personas-agrupación-de-rostros-y-respaldo-por-persona).
+
 | Suite | Comando | Resultado |
 |---|---|---|
 | Unitarias (JVM + Robolectric) | `./gradlew testDebugUnitTest` | **559 pruebas, 0 fallos** (dos pasadas seguidas; una pasada intermedia mostró el fallo intermitente de Windows descrito más abajo, que no se repitió) |
@@ -77,10 +79,42 @@ Todo lo anterior se ejecutó realmente; nada de lo que sigue se declara como pas
 
 Qué **no** se pudo probar con el dispositivo disponible: huella dactilar (el emulador solo tiene PIN), Android 10 (la rama de la clave con ventana de autenticación), un teléfono real, TalkBack, pantallas grandes y modo oscuro de las pantallas privadas (se revisaron capturas en claro), un bucket de AWS real.
 
+## Personas: agrupación de rostros y respaldo por persona
+
+Datos de prueba: fotografías de **dominio público** (retratos de NASA/Fuerza Aérea/Senado de EE. UU.; [atribución](../app/src/test/resources/faces/ATTRIBUTION.md)) y vectores sintéticos con similitud controlada. Ninguna foto personal ni ningún bucket real: S3 es un sustituto local. LFW solo se usó fuera del repositorio para calibrar ([face-grouping.md](face-grouping.md)).
+
+| Qué se prueba | Pruebas | Cómo |
+|---|---|---|
+| **Modelos reales en JVM** (ONNX Runtime de escritorio) | `FaceModelRealTest` (8) | Hashes de los modelos incluidos; un retrato da una cara con caja válida y vector unitario; fotos de la misma persona se parecen más que las de personas distintas; en una foto de grupo de 5 caras solo una coincide con la persona de los retratos; imágenes sin cara (plana, ruido, degradado) no dan nada ni fallan; la misma foto da el mismo vector; un rostro demasiado pequeño se cuenta y no se compara; coordenadas correctas con una foto ampliada |
+| **Modelos reales en el emulador** | `FaceDeviceTest` (5) | ONNX Runtime de Android + decodificador de la plataforma: lo mismo que arriba; una foto guardada de lado con etiqueta EXIF se analiza derecha y el recorte que se dibuja contiene la cara; archivo dañado / inaccesible; **0 bytes enviados y recibidos** durante el análisis (`TrafficStats` por UID) y coste medido; ruta completa: indexar fotos reales en MediaStore, crear una persona, activar la regla, el motor de respaldo real sube **solo** esas fotos, enteras (SHA-256 idéntico), con el prefijo, sin datos faciales ni borrados |
+| Geometría, decodificador de YuNet, calidad | `FaceGeometryTest` (8) | Ajuste y alineación, bordes en negro, lienzo del detector, decodificación y supresión de solapes, veredictos de calidad |
+| Sellado y códec de huellas | `FaceVaultTest` (5) | Ida y vuelta, alteración de cualquier byte, otra finalidad, otra clave, clave destruida, clave ilegible, error de cuantización < 10⁻⁴ |
+| Agrupación | `FaceGroupingTest` (13) | Colocar/ sugerir / dejar suelto, grupos bloqueados y misma foto, grupos nuevos (mínimos de rostros y fotos, ráfagas), cadenas de parecidos, ofertas de fusión, 40 personas sin ninguna colocación errónea |
+| Política de respaldo | `FaceBackupPolicyTest` (12) | Cada veredicto: confirmado, automático seguro/dudoso/ambiguo/baja calidad, sugerencia, grupo sin revisar, política «probables», varias caras, estados que no se tocan, copia borrada a propósito, exclusiones, fotos antiguas |
+| Estados de la pantalla | `PeoplePhaseTest` (14) | Los siete estados pedidos y sus bordes |
+| Análisis incremental, correcciones | `FaceIndexTest` (26) | Fotos analizadas una vez, presupuesto por ejecución, cancelación y reanudación sin duplicados, archivo ilegible / sin permiso, caras pequeñas contadas, clave perdida (con y sin datos), sin modelo, cuota de rostros y poco espacio, grupos que se forman y no se duplican, correcciones que sobreviven a un reanálisis (misma fila, grupo, confirmación y rechazos), fotos que salen del dispositivo, nombrar/quitar/separar/combinar/sugerencias/ocultar/borrar, **nada fuera del índice cambia**, trabajo pesado fuera del hilo del llamador |
+| **Reglas de respaldo** | `FaceBackupRuleTest` (23) | Sin regla no se encola; solo fotos nuevas; existentes con vista previa = lo encolado y exclusiones; idempotencia; sin S3; estados que no se tocan; copia de S3 borrada a propósito; foto que dejó el dispositivo; dudosas a revisión y decisiones del usuario; varias personas en una foto (una vez, entera); persona oculta; política probables; pausa y reanudación; deshacer; quitar regla/borrar persona sin borrar nada; pasada única interrumpida y reanudada tras «reinicio»; **desactivar la regla durante el análisis**; con el motor de respaldo real: subida única bajo el prefijo, **caída de red** (siguen en cola, se reintentan una vez), **error de permisos de AWS** (cola intacta, no se reencola), respaldo en pausa |
+| Escala | `FaceScaleTest` (1) | 600 rostros nuevos entre 12 000 agrupados, 3 000 sueltos y 300 grupos: 434 ms, 0 colocaciones erróneas |
+| Privacidad (estática) | `FacePrivacyGuardTest` (9) | El código de rostros no importa red ni S3; el trabajo no pide red; los registros solo llevan texto constante (se comprobó con una mutación); nada de rostros se escribe en archivos ni MediaStore; permisos del manifiesto sin cambios; sin copias del sistema; huellas selladas; **toda entrada a la función (herramienta, franja de Álbumes, fila de Ajustes, página del tutorial, tema de ayuda, rutas, trabajo) respeta el interruptor `-PwithFaces`** (se comprobó con una mutación) |
+| Pantallas reales | `PeopleUiTest` (11) | Nada se analiza hasta aceptar la explicación; «Activar» lanza el análisis real con el trabajador real; nombrar y quitar una foto sin tocarla; la regla (vista previa, excluir, confirmar, el trabajador sube solo lo confirmado); deshacer; sin S3; sugerencias; grupo sin revisar bloquea «Continuar»; borrar el índice deja fotos y estados intactos; **tema oscuro y texto al 150 %** (capturas) |
+| Migración | `MigrationTest.version11To12…` | Base v11 con datos: nada existente cambia, tablas nuevas usables y borrado en cascada |
+
+**Compilación sin la función (`-PwithFaces=false`), comprobada a mano en el emulador el 27 de octubre de 2026:** el paquete no contiene `assets/faces` (`unzip -l`); instalada, ni la pestaña Álbumes, ni Ajustes, ni el menú de herramientas de la biblioteca, ni la ayuda muestran ningún texto de personas o rostros (volcado de `uiautomator`). Esa comprobación encontró un fallo real —la franja «Personas» de Álbumes seguía visible— que se corrigió y se añadió a la guarda estática. Las pruebas de interfaz de Personas (`PeopleUiTest`) no aplican a esa compilación: se ejecutan con la función (11/11 OK, repetidas tras el cambio; la primera ejecución falló por un diálogo del sistema «systemui no responde» tras el arranque en frío del emulador y pasó al repetirla).
+
+**Mutaciones comprobadas** (se rompió el código a propósito y las pruebas lo detectaron): quitar la protección de `backupExcluded` en `enqueueForRule` y quitar el filtro de estado de la política → fallan 5 pruebas; meter `java.net.URL` o una traza con interpolación en el código de rostros → fallan las guardas de privacidad.
+
+**Fallos encontrados y arreglados por las pruebas:** margen guardado como 0 para los miembros de un grupo nuevo (la política estricta los llamaba «ambiguos» → ahora se recalcula al evaluar); el propio rostro contaba en el centro del grupo que lo juzgaba (→ medición sin él); `openFd` no sirve con assets comprimidos al extraer los modelos; el orden dentro de un lote de análisis no es determinista (una prueba lo suponía); vista previa de un grupo sin revisar incoherente con la activación (→ la hoja exige confirmar el grupo).
+
+**Una prueba preexistente tocada:** `PrivateVaultBenchTest.rawEncryptionThroughput` usaba 32 MiB y necesitaba ≈160 MB a la vez en un montón de 192 MB, de modo que pasaba por pocos MB de margen y falló al ejecutarse detrás de otras pruebas (no hay fuga: tras recolectar quedan 8–12 MB). Ahora usa 16 MiB; mide MiB/s, que no depende del tamaño.
+
+**Entorno de las pruebas JVM con los modelos reales.** Usan el ONNX Runtime de escritorio (1.31.0; el de la app es el de Android 1.28.0, se excluye del classpath de pruebas). En esta máquina Windows, todos los JDK instalados traen un `msvcp140.dll` antiguo que hace caer la JVM al cargar ONNX Runtime; se ejecutan con `-PtestJavaHome=<copia del JDK con las DLL del sistema>`. En Linux/macOS o con un JDK con runtime reciente no hace falta. Sin eso, la JVM de pruebas se cae (error nativo en `msvcp140.dll`) en cuanto una prueba carga los modelos, es decir, en `FaceModelRealTest`; el resto de las clases corre igual si se excluye esa.
+
+**Qué no se pudo probar:** un móvil ARM real (tiempos, batería, calor), una biblioteca de decenas de miles de fotos reales, fotos personales (por privacidad), reinicio real del dispositivo con trabajos pendientes (la recuperación se cubre con interrupciones de proceso simuladas y el estado persistido), un bucket de AWS real, TalkBack, Android 10 y tabletas.
+
 ## Ejecutar
 
 ```bash
-./gradlew testDebugUnitTest
+./gradlew testDebugUnitTest      # en Windows con JDK de runtime C++ antiguo: añadir -PtestJavaHome=<jdk>, ver «Personas» arriba
 ./gradlew connectedDebugAndroidTest                                           # requiere emulador/dispositivo
 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.s3vault.app.AppFlowTest
 ```
@@ -127,6 +161,7 @@ Requieren dispositivo real y/o cuenta AWS y **no se han ejecutado**:
 - Subida/verificación/restauración extremo a extremo contra S3 real (el servidor simulado cubre el protocolo, no las particularidades de AWS: firma sobre HTTPS con `UNSIGNED-PAYLOAD`, `ChecksumMode`, comportamiento del 403/404 en `HEAD`).
 - Credenciales STS reales (`assume-role`, `get-session-token`, `export-credentials` con SSO) y el formato exacto de `Expiration` de tu versión de la CLI.
 - `WorkManager` periódico con pantalla apagada, Doze, ahorro de batería y *standby buckets*; reinicio real del dispositivo.
+- **«Personas» en un móvil ARM real** (tiempo por foto, batería, calor, calidad de los grupos con fotos propias). **No se ha hecho.**
 - Rendimiento y memoria con bibliotecas de **100 000+** fotos y en un dispositivo real de gama baja (con 20 000 por galería se midió en el emulador, ver `LibraryPerformanceTest`; el tiempo del primer escaneo de MediaStore con muchos archivos no se midió). Un listado de S3 de decenas de miles de objetos contra AWS real tampoco.
 - Fechas de captura reales: en el emulador MediaProvider ignora el `DATE_TAKEN` que escribe una prueba, así que las pruebas de interfaz usan fechas en el nombre del archivo; la lectura de `DATE_TAKEN`/EXIF está cubierta por las pruebas unitarias del resolvedor, no por una foto de cámara real.
 - Hashing y subida de archivos grandes (varios cientos de MB) y de vídeos; límite de 4 GiB sin multipart.

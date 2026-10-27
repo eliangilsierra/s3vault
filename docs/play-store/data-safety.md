@@ -1,6 +1,6 @@
 # Sección «Seguridad de los datos» de Google Play: borrador de respuestas
 
-> **Estado: borrador para que el propietario lo revise y lo rellene en Play Console. No se ha enviado nada.** Se basa en el comportamiento real de la versión 0.4.1 (código, manifiesto y las 254 dependencias de la versión de producción) y en las definiciones vigentes de Play, consultadas el 25 de octubre de 2026 en la ayuda oficial («Proporcionar información para la sección Seguridad de los datos»):
+> **Estado: borrador para que el propietario lo revise y lo rellene en Play Console. No se ha enviado nada.** Se basa en el comportamiento real de la versión 0.5.0 (código, manifiesto y las 254 dependencias de la versión de producción; auditadas sobre la 0.4.1, y la 0.5.0 no añade dependencias de producción ni cambia el manifiesto) y en las definiciones vigentes de Play, consultadas el 25 de octubre de 2026 en la ayuda oficial («Proporcionar información para la sección Seguridad de los datos»):
 >
 > - **Recopilar** = transmitir datos del usuario fuera del dispositivo, incluidos los enviados por bibliotecas o SDK, vayan al desarrollador o a un tercero.
 > - **Compartir** = transferir datos recopilados a un tercero. Quedan exentas las transferencias a **proveedores de servicios** que actúan solo en nombre del desarrollador y las **acciones iniciadas por el usuario** que este espera razonablemente.
@@ -11,6 +11,15 @@
 ## Resumen de la lógica
 
 La app **no envía datos al desarrollador**. La única transmisión de datos de usuario fuera del dispositivo es la que **el propio usuario configura y activa**: subir sus fotos y vídeos a **su** bucket de Amazon S3. Eso cuenta como «recopilar» en la definición de Play (sale del dispositivo), pero el destino es una cuenta que controla el usuario, no el desarrollador ni un tercero elegido por él.
+
+## Datos faciales de «Personas» (función opcional)
+
+Definición vigente de Play (ayuda «Proporcionar información para la sección Seguridad de los datos», consultada el 26 de octubre de 2026): *recopilar* es **transmitir datos fuera del dispositivo**; los datos de usuario **«solo procesados localmente en el dispositivo y no enviados fuera de él» no hay que declararlos**. Las huellas faciales, posiciones, grupos y nombres de «Personas» **nunca salen del móvil** (comprobado: el análisis no pide red, el código no importa clases de red, una pasada de prueba envió y recibió 0 bytes; ver [face-grouping.md](../face-grouping.md#privacidad-y-datos)). Propuesta: **no declararlos como recopilados ni compartidos**, y describirlos con claridad en la política de privacidad (que Play exige igualmente y debe coincidir con lo que hace la app).
+
+Lo que **no** está resuelto y debe valorarse antes de enviar:
+- Las páginas de Play consultadas no contienen ninguna regla específica sobre datos biométricos; comprobar el asistente de Play Console y la política de «Datos de usuario» vigente el día del envío.
+- Que Play no exija declararlo no cambia las obligaciones legales de privacidad (datos biométricos) del propietario: ver los bloqueos de [face-grouping.md](../face-grouping.md#bloqueos-antes-de-publicar-en-google-play).
+- Decisión del propietario: por prudencia puede mencionar la función en el campo de descripción de privacidad de la ficha.
 
 ## Preguntas generales
 
@@ -51,5 +60,5 @@ La app **no envía datos al desarrollador**. La única transmisión de datos de 
 
 1. Releer las definiciones vigentes en Play Console (pueden cambiar).
 2. Decidir las tres cuestiones marcadas como «Decisión del propietario» o «Pregunta abierta».
-3. Si se añade **cualquier** biblioteca nueva (analítica, publicidad, fallos), rehacer este documento y la política.
+3. «Personas» no añade ninguna biblioteca nueva (reutiliza ONNX Runtime con dos modelos incluidos en la app). Si se añade **cualquier** biblioteca nueva (analítica, publicidad, fallos), rehacer este documento y la política.
 4. Que la política de privacidad publicada diga lo mismo que las respuestas.
