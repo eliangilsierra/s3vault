@@ -50,7 +50,7 @@ import com.s3vault.app.presentation.ui.SettingsRow
 
 private class Topic(val id: Int, val title: Int, val body: Int, val links: List<Pair<Int, String>> = emptyList())
 
-private val Topics = listOf(
+private val AllTopics = listOf(
     Topic(0, R.string.help_what_title, R.string.help_what_body),
     Topic(1, R.string.help_features_title, R.string.help_features_body),
     Topic(2, R.string.help_setup_title, R.string.help_setup_body, listOf(
@@ -64,8 +64,12 @@ private val Topics = listOf(
     Topic(6, R.string.help_creds_title, R.string.help_creds_body),
     Topic(7, R.string.help_cost_title, R.string.help_cost_body, listOf(R.string.help_link_aws_pricing to Links.AWS_S3_PRICING)),
     Topic(8, R.string.help_private_title, R.string.help_private_body),
+    Topic(10, R.string.help_people_title, R.string.help_people_body),
     Topic(9, R.string.help_trouble_title, R.string.help_trouble_body),
 )
+
+/** The People topic is left out of a build made without the feature (`-PwithFaces=false`). */
+private val Topics get() = AllTopics.filter { it.id != 10 || com.s3vault.app.data.faces.FaceFeature.available }
 
 /** Help that stays available after the first-run tour: the same facts, by topic, plus the version and where to report problems. */
 @Composable

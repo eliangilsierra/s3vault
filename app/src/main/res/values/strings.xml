@@ -32,6 +32,8 @@
     <string name="onb_f_cloud_title">Tu bucket</string>
     <string name="onb_f_cloud_body">La pestaña S3 muestra lo que ya está en la nube, con vistas previas, y permite restaurarlo. Borrar en S3 es opcional y exige un permiso que tú das.</string>
     <string name="onb_f_tools_title">Herramientas</string>
+    <string name="onb_f_people_title">Personas</string>
+    <string name="onb_f_people_body">Opcional: agrupa tus fotos por persona en el móvil, sin enviar nada, y elige de quién respaldar las fotos nuevas. Los grupos son estimaciones que tú revisas.</string>
     <string name="onb_f_tools_body">Auditoría del respaldo, liberar espacio verificado, duplicados, álbumes privados cifrados y búsqueda por contenido opcional, desde el menú de la galería.</string>
 
     <!-- Storage -->
@@ -115,7 +117,7 @@
     <string name="help_what_body">Una galería de fotos para Android que muestra las fotos y vídeos de tu móvil y puede guardar copias de seguridad en un bucket privado de Amazon S3 que configuras tú. No hay cuenta ni servidor del desarrollador: la app solo habla con tu bucket.</string>
 
     <string name="help_features_title">Qué puedes hacer</string>
-    <string name="help_features_body">• Galería del dispositivo: buscar por nombre o fecha, filtrar, agrupar por día, mes o año, álbumes y álbumes inteligentes.\n• Respaldar fotos y vídeos en tu bucket, a mano o de forma automática.\n• Ver el estado de cada copia en la pestaña Respaldo.\n• Explorar tu bucket en la pestaña S3 y restaurar fotos.\n• Herramientas (menú de la galería): auditoría del respaldo, liberar espacio verificado, duplicados, álbumes privados cifrados y búsqueda por contenido opcional.</string>
+    <string name="help_features_body">• Galería del dispositivo: buscar por nombre o fecha, filtrar, agrupar por día, mes o año, álbumes y álbumes inteligentes.\n• Respaldar fotos y vídeos en tu bucket, a mano o de forma automática.\n• Ver el estado de cada copia en la pestaña Respaldo.\n• Explorar tu bucket en la pestaña S3 y restaurar fotos.\n• Herramientas (menú de la galería): auditoría del respaldo, liberar espacio verificado, duplicados, álbumes privados cifrados, búsqueda por contenido opcional y Personas (álbumes por rostro, opcional).</string>
 
     <string name="help_setup_title">Configurar Amazon S3</string>
     <string name="help_setup_body">1. Ten una cuenta de AWS y crea un bucket privado (deja activado el bloqueo de acceso público).\n2. Crea una identidad IAM con permisos de listar, escribir y leer solo en tu bucket y prefijo.\n3. En Ajustes → Amazon S3, indica región, bucket y prefijo.\n4. En Ajustes → Seguridad y credenciales, guarda las credenciales.\n5. Pulsa «Probar conexión» y «Probar permisos». Ninguna de las dos borra nada.\n\nLa política IAM recomendada está en la documentación del proyecto.</string>
@@ -138,6 +140,8 @@
     <string name="help_private_title">Álbumes privados</string>
     <string name="help_private_body">Copias cifradas de fotos que se abren con tu huella, PIN o patrón. Se crean desde la galería («Mover a álbum privado»). Tus originales no se tocan hasta que tú lo confirmas, y las fotos privadas no se respaldan en S3. Si quitas el bloqueo de pantalla, restableces el móvil o borras los datos de la app, las fotos cifradas se pierden y no se pueden recuperar.</string>
 
+    <string name="help_people_title">Personas y respaldo por rostro</string>
+    <string name="help_people_body">Opcional y desactivado al principio. Al activarlo, la app busca rostros en las fotos de tu móvil y agrupa los que se parecen, para que veas álbumes por persona. Todo ocurre en tu móvil: los modelos vienen con la app y no se envía ninguna foto ni dato facial a internet, a S3 ni al desarrollador.\n\nLos grupos son estimaciones y pueden equivocarse (gemelos, parecidos, fotos borrosas o de perfil). Ábrelos desde Herramientas → Personas o desde la pestaña Álbumes: puedes poner nombre, quitar fotos, separar, combinar o ignorar un grupo, y se recuerda tu corrección. Estas operaciones solo cambian el índice facial, nunca tus fotos.\n\nEn cada persona puedes activar «Incluir en respaldo automático»: las fotos nuevas en las que aparezca se añaden a la cola de respaldo de siempre. Antes ves cuántas fotos serían, puedes excluir alguna y se te pide confirmar; las dudosas nunca se suben solas, van a «Revisar». Quitar la regla o borrar la persona no borra ninguna foto ni copia. Para borrar todos los datos faciales: Ajustes → Personas y rostros → Borrar índice facial.</string>
     <string name="help_trouble_title">Solución de problemas</string>
     <string name="help_trouble_body">• No veo mis fotos: concede el permiso de fotos (Ajustes de Android → Aplicaciones → S3 Vault → Permisos). Si diste acceso parcial, solo se ven las fotos elegidas.\n• «Credenciales caducadas»: añade credenciales nuevas en Ajustes → Seguridad y credenciales. La cola de respaldo se conserva.\n• «La región no coincide»: la región debe ser la del bucket. «Probar conexión» muestra la correcta.\n• «Permisos insuficientes»: revisa la política IAM; hacen falta listar, escribir y leer en el bucket y el prefijo.\n• «El bucket no existe»: revisa el nombre (sin espacios, en minúsculas).\n• Errores de red: la cola se conserva y se reintenta sola cuando vuelve la conexión.</string>
 

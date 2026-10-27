@@ -91,6 +91,9 @@ fun AlbumsScreen(
     smart: com.s3vault.app.presentation.smart.SmartHome = com.s3vault.app.presentation.smart.SmartHome(),
     onOpenSmart: (String) -> Unit = {},
     onOpenSmartAll: () -> Unit = {},
+    /** Number of people found, or null while the face analysis is off and there is nothing to show. */
+    peopleCount: Int? = null,
+    onOpenPeople: () -> Unit = {},
 ) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val importing by vm.isImporting.collectAsStateWithLifecycle()
@@ -129,6 +132,7 @@ fun AlbumsScreen(
             when {
                 list == null -> GridSkeleton()
                 list.isEmpty() -> Column(Modifier.fillMaxSize()) {
+                    if (com.s3vault.app.data.faces.FaceFeature.available) com.s3vault.app.presentation.people.PeopleStrip(peopleCount, onOpenPeople)
                     SmartStrip(smart, onOpenSmart, onOpenSmartAll)
                     Box(Modifier.weight(1f)) {
                         EmptyState(
@@ -149,6 +153,9 @@ fun AlbumsScreen(
                     horizontalArrangement = Arrangement.spacedBy(Space.m),
                     verticalArrangement = Arrangement.spacedBy(Space.l),
                 ) {
+                    if (com.s3vault.app.data.faces.FaceFeature.available) {
+                        item(key = "people-strip", span = { GridItemSpan(maxLineSpan) }) { com.s3vault.app.presentation.people.PeopleStrip(peopleCount, onOpenPeople) }
+                    }
                     item(key = "smart-strip", span = { GridItemSpan(maxLineSpan) }) { SmartStrip(smart, onOpenSmart, onOpenSmartAll, Modifier.padding(horizontal = 0.dp)) }
                     items(list, key = { it.id }) { AlbumTile(it, vm::loadPreview) { onOpenAlbum(it.id) } }
                 }
