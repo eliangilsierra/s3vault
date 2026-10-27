@@ -78,6 +78,7 @@ import com.s3vault.app.presentation.SecurityViewModel
 import com.s3vault.app.presentation.albums.AlbumDetailScreen
 import com.s3vault.app.presentation.albums.AlbumsScreen
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.ImageSearch
 import com.s3vault.app.presentation.semantic.SemanticSearchScreen
 import com.s3vault.app.presentation.semantic.SemanticSearchViewModel
@@ -124,10 +125,13 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 private val TabRoutes = Tab.entries.map { it.route }.toSet()
 
 /** The library tools, in the order the hub shows them. Each entry is a route; the hub never knows what a tool does. */
-private val LibraryTools = listOf(
+@Composable
+private fun libraryTools(): List<Tool> = listOfNotNull(
     Tool("sync", "Centro de sincronización", "Qué está en este dispositivo, en S3 o en camino, y por qué algo falló", Icons.Filled.CloudSync, "Respaldo"),
     Tool("integrity", "Auditoría del respaldo", "Comprueba que S3 sigue teniendo lo que respaldaste (solo lee)", Icons.AutoMirrored.Filled.FactCheck, "Respaldo"),
     Tool("semantic", "Buscar por contenido", "Encuentra fotos por lo que se ve. Opcional, en tu móvil, sin enviar nada", Icons.Filled.ImageSearch, "Organizar"),
+    if (!com.s3vault.app.data.faces.FaceFeature.available) null
+    else Tool("people", androidx.compose.ui.res.stringResource(com.s3vault.app.R.string.people_tool_title), androidx.compose.ui.res.stringResource(com.s3vault.app.R.string.people_tool_subtitle), Icons.Filled.Face, "Organizar"),
     Tool("smart", "Álbumes inteligentes", "Favoritas, capturas, vídeos, grandes, sin respaldar, por año… y los tuyos", Icons.Filled.AutoAwesome, "Organizar"),
     Tool("private", "Álbumes privados", "Fotos cifradas que solo se abren con tu huella o PIN. Copia, no mueve ni borra", Icons.Filled.Lock, "Privacidad"),
     Tool("duplicates", "Duplicados y parecidas", "Copias idénticas y fotos probablemente iguales, para elegir cuál conservar", Icons.Filled.ContentCopy, "Este dispositivo"),
@@ -262,8 +266,11 @@ private fun AppRootContent(container: AppContainer, startOnboarding: Boolean) {
                 val vm: AlbumsViewModel = viewModel(factory = factory)
                 val smartVm: SmartAlbumsViewModel = viewModel(factory = factory)
                 val smart by smartVm.home.collectAsStateWithLifecycle()
+                val peopleCount by container.db.faces().observePeopleCount().collectAsStateWithLifecycle(0)
+                val peopleOn by container.settings.faceEnabled.collectAsStateWithLifecycle(false)
                 AlbumsScreen(
                     vm, onOpenAlbum = { id -> nav.navigate("album/$id") },
+                    peopleCount = if (com.s3vault.app.data.faces.FaceFeature.available && (peopleOn || peopleCount > 0)) peopleCount else null, onOpenPeople = { nav.navigate("people") },
                     smart = smart, onOpenSmart = { id -> nav.navigate("smart/" + android.net.Uri.encode(id)) }, onOpenSmartAll = { nav.navigate("smart") },
                 )
             }
@@ -320,11 +327,36 @@ private fun AppRootContent(container: AppContainer, startOnboarding: Boolean) {
                 )
             }
             composable("tools") {
-                ToolsScreen(LibraryTools, onBack = { nav.popBackStack() }) { id ->
+                ToolsScreen(libraryTools(), onBack = { nav.popBackStack() }) { id ->
                     when (id) {
                         "sync" -> nav.navigateTab(Tab.Backup.route)
                         else -> nav.navigate(id)
                     }
+                }
+            }
+            if (com.s3vault.app.data.faces.FaceFeature.available) {
+                composable("people") {
+                    val vm: com.s3vault.app.presentation.people.PeopleViewModel = viewModel(factory = factory)
+                    com.s3vault.app.presentation.people.PeopleScreen(
+                        vm, container, onBack = { nav.popBackStack() }, onOpenPerson = { id -> nav.navigate("people/$id") },
+                        onOpenReview = { nav.navigate("people/review") }, onOpenSettings = { nav.navigate("people/settings") },
+                    )
+                }
+                composable("people/review") {
+                    val vm: com.s3vault.app.presentation.people.ReviewViewModel = viewModel(factory = factory)
+                    com.s3vault.app.presentation.people.ReviewScreen(vm, container, onBack = { nav.popBackStack() }, onOpenPerson = { id -> nav.navigate("people/$id") })
+                }
+                composable("people/settings") {
+                    val vm: com.s3vault.app.presentation.people.PeopleViewModel = viewModel(factory = factory)
+                    com.s3vault.app.presentation.people.FaceSettingsScreen(vm, onBack = { nav.popBackStack() })
+                }
+                composable("people/{personId}", listOf(navArgument("personId") { type = NavType.LongType })) { e ->
+                    val vm: com.s3vault.app.presentation.people.PersonDetailViewModel = viewModel(factory = factory)
+                    com.s3vault.app.presentation.people.PersonDetailScreen(
+                        e.arguments!!.getLong("personId"), vm, container, onBack = { nav.popBackStack() },
+                        onOpenPhoto = { id -> nav.navigate("viewer/one/$id") },
+                        onOpenS3Settings = { nav.navigate("settings/s3") }, onOpenCredentials = { nav.navigate("settings/security") },
+                    )
                 }
             }
             composable("private") {
@@ -399,6 +431,7 @@ private fun AppRootContent(container: AppContainer, startOnboarding: Boolean) {
                     onGeneral = { nav.navigate("settings/general") },
                     onCosts = { nav.navigate("settings/costs") },
                     onTools = { nav.navigate("tools") },
+                    onPeople = { nav.navigate("people/settings") },
                     onHelp = { nav.navigate("help") },
                     costSummary = cost.summaryLine(),
                 )

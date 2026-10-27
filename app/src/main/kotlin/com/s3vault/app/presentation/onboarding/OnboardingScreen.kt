@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
@@ -227,6 +228,9 @@ private fun Features() {
     InfoRow(Icons.Filled.CloudUpload, stringResource(R.string.onb_f_backup_title), stringResource(R.string.onb_f_backup_body))
     InfoRow(Icons.Filled.CheckCircle, stringResource(R.string.onb_f_status_title), stringResource(R.string.onb_f_status_body))
     InfoRow(Icons.Filled.CloudQueue, stringResource(R.string.onb_f_cloud_title), stringResource(R.string.onb_f_cloud_body))
+    if (com.s3vault.app.data.faces.FaceFeature.available) {
+        InfoRow(Icons.Filled.Face, stringResource(R.string.onb_f_people_title), stringResource(R.string.onb_f_people_body))
+    }
     InfoRow(Icons.Filled.Dashboard, stringResource(R.string.onb_f_tools_title), stringResource(R.string.onb_f_tools_body))
 }
 

@@ -4,7 +4,9 @@ Galería de fotos para Android que, si tú quieres, guarda copias de seguridad d
 
 La aplicación habla directamente con la API de Amazon S3 usando credenciales que controlas tú. No hay servidores del desarrollador, cuentas de usuario, suscripciones, anuncios ni telemetría.
 
-> **Estado:** versión 0.4.1. Todavía **no está publicada en Google Play**; los materiales para publicarla son borradores en [docs/play-store/](docs/play-store/README.md). Se reparte como APK a probadores.
+> **Estado:** versión 0.5.0. Todavía **no está publicada en Google Play**; los materiales para publicarla son borradores en [docs/play-store/](docs/play-store/README.md). Se reparte como APK a probadores.
+>
+> **Personas (agrupación de rostros)** está implementada, es opcional y está desactivada por defecto, pero tiene dos puntos legales sin revisar (la procedencia de los datos de entrenamiento del modelo y el tratamiento de datos biométricos). Es software libre «tal cual»: lee el [aviso y responsabilidad](#aviso-y-responsabilidad). Quien distribuya una compilación puede dejarla fuera con `-PwithFaces=false` ([cómo](docs/face-grouping.md#compilar-sin-la-función)).
 
 ## Qué puedes hacer
 
@@ -14,6 +16,7 @@ La aplicación habla directamente con la API de Amazon S3 usando credenciales qu
 - **Tu bucket.** La pestaña *S3* muestra lo que ya está en la nube con vistas previas y permite **restaurarlo** al dispositivo sin sobrescribir nada.
 - **Eliminar con control.** «Eliminar del dispositivo» y «Eliminar de S3» son acciones distintas, siempre con confirmación; nunca se borran las dos copias de un solo paso. Borrar en S3 está desactivado hasta que concedas ese permiso en AWS.
 - **Herramientas** (Galería → ⋮): auditoría del respaldo (solo lectura), liberar espacio solo con lo verificado en S3, duplicados y fotos parecidas, álbumes privados cifrados y búsqueda por contenido opcional. Ver [docs/library-tools.md](docs/library-tools.md).
+- **Personas (opcional, solo en tu móvil).** Agrupa tus fotos por rostro en álbumes por persona, que tú nombras, corriges y combinas, y permite elegir **de quién respaldar automáticamente las fotos nuevas** (con vista previa, exclusiones, «deshacer» y revisión de las dudas). El análisis es local: no se envía ninguna foto, rostro ni dato facial a ningún sitio, y las huellas se guardan cifradas y se pueden borrar. Las agrupaciones son **estimaciones** que pueden equivocarse. Ver [docs/face-grouping.md](docs/face-grouping.md).
 - **Ayuda integrada.** Un tutorial de bienvenida la primera vez y, siempre, *Ajustes → Ayuda y tutorial*.
 
 Lo que **no** es: no es un servicio de nube ni cifrado de extremo a extremo (lo que subes a S3 queda protegido por la configuración de tu bucket), y una foto del móvil no tiene copia en la nube hasta que la respaldas.
@@ -51,6 +54,7 @@ S3 es un servicio de pago que **AWS factura a tu cuenta** (la app no cobra nada)
 
 - Las credenciales se guardan cifradas (AES-256-GCM, clave de Android Keystore); nunca en Room, preferencias ni registros, y las copias de seguridad de Android están desactivadas. Las pantallas con secretos y los álbumes privados bloquean las capturas.
 - Todas las conexiones usan HTTPS. No hay analítica, publicidad ni informes de fallos de terceros.
+- **Personas:** el análisis facial corre en el móvil con modelos que vienen en la app (sin descargas ni red). Cada huella facial se guarda cifrada (AES-256-GCM, clave del Keystore), fuera de las copias de Android; no se guardan recortes de caras y a S3 solo van las fotos que respaldas. Se borra todo desde *Ajustes → Personas y rostros → Borrar índice facial* sin tocar fotos ni copias.
 - Los álbumes privados cifran las fotos con una clave protegida por tu huella o PIN. **Si pierdes esa clave (por ejemplo, quitando el bloqueo de pantalla), no hay recuperación.**
 - Android Keystore no protege frente a un dispositivo comprometido. Riesgos residuales y modelo de amenazas: [docs/security.md](docs/security.md).
 
@@ -61,6 +65,7 @@ S3 es un servicio de pago que **AWS factura a tu cuenta** (la app no cobra nada)
 - Sin carga multiparte: los archivos de más de 4 GiB se rechazan con un mensaje claro.
 - Los álbumes privados solo admiten fotos y no se respaldan en S3.
 - La búsqueda por contenido es opcional, descarga ≈ 148 MiB una vez, funciona mejor en inglés y hace el APK de ≈ 5,7 MB a 33,6 MiB ([docs/semantic-search.md](docs/semantic-search.md)).
+- Personas agrupa por parecido: puede confundir gemelos o parientes y no reconoce bien rostros pequeños, de perfil, borrosos o con décadas de diferencia. Hace el APK de 33,5 a ≈ 51 MiB; con `-PwithFaces=false` vuelve a su tamaño anterior ([docs/face-grouping.md](docs/face-grouping.md)).
 - La interfaz está solo en español.
 - Probado en emulador; no se ha validado con un bucket real de AWS ni en todos los fabricantes ([docs/testing.md](docs/testing.md)).
 
@@ -114,6 +119,8 @@ Cada archivo respaldado se guarda como `{prefijo}/photos/{assetId}/{versionId}/{
 | [docs/cloud-previews.md](docs/cloud-previews.md) | Vista previa sin descargar y borrado |
 | [docs/library-tools.md](docs/library-tools.md) | Sincronización, auditoría, liberar espacio, duplicados, álbumes inteligentes |
 | [docs/semantic-search.md](docs/semantic-search.md) | Búsqueda por contenido: modelo, privacidad, medidas y límites |
+| [docs/face-grouping.md](docs/face-grouping.md) | Personas: modelo y licencias, mediciones, agrupación, respaldo por persona, privacidad, límites y bloqueos de publicación |
+| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Licencias de los modelos y bibliotecas de terceros, y lo que no está verificado |
 | [docs/private-albums.md](docs/private-albums.md) | Álbumes privados: cifrado, clave, bloqueo y pérdida de la clave |
 | [docs/security.md](docs/security.md) | Modelo de amenazas, datos y riesgos residuales |
 | [docs/design-system.md](docs/design-system.md) | Dirección visual, tokens, componentes y accesibilidad |
@@ -121,6 +128,17 @@ Cada archivo respaldado se guarda como `{prefijo}/photos/{assetId}/{versionId}/{
 | [docs/release.md](docs/release.md) | Cómo generar y verificar el paquete firmado |
 | [docs/play-store/](docs/play-store/README.md) | Borradores de la ficha, política de privacidad, declaraciones y lista de publicación |
 
+## Aviso y responsabilidad
+
+S3 Vault es software libre y gratuito, distribuido bajo la licencia MIT **«tal cual», sin garantía de ningún tipo**. Úsalo bajo tu responsabilidad.
+
+- **Tus datos y tu cuenta de AWS.** Eres responsable de tu bucket, tus credenciales, tus permisos de IAM y los costes de AWS ([docs/cost-estimate.md](docs/cost-estimate.md)). Las copias de seguridad dependen de cómo lo configures; comprueba que puedes restaurar antes de borrar nada.
+- **Personas (rostros).** Es una función experimental y opcional que procesa **solo en tu móvil** y no envía nada a ningún sitio. Las agrupaciones son estimaciones y se equivocan; no las uses como prueba de identidad ni para decisiones que importen. Si en tus fotos aparecen otras personas, **eres responsable de contar con su permiso** y de cumplir las leyes de tu país sobre datos personales y biométricos. La licencia MIT no te exime de esas leyes.
+- **Modelos de terceros.** Los modelos de rostros tienen su propia licencia y la procedencia de los datos con que se entrenó uno de ellos **no está verificada** ([THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)). Si vas a **redistribuir** una compilación (por ejemplo, publicarla en una tienda), revisa eso antes, o compila sin la función con `-PwithFaces=false`.
+- **Quien publique una compilación** asume las obligaciones de publicarla (política de privacidad, declaraciones de la tienda, leyes de los países donde la distribuya). Los borradores de [docs/play-store/](docs/play-store/README.md) son un punto de partida, no una revisión legal.
+
+Nada de esto es asesoría legal.
+
 ## Licencia
 
-Distribuido bajo la licencia MIT. Consulta el archivo [LICENSE](LICENSE).
+Distribuido bajo la licencia MIT. Consulta el archivo [LICENSE](LICENSE). Los modelos y bibliotecas de terceros conservan su propia licencia: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

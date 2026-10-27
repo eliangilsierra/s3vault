@@ -55,6 +55,28 @@ $ANDROID_HOME/build-tools/<versión>/apksigner verify --print-certs app/build/ou
 | `app-release.aab` | 18 991 426 bytes (18,1 MiB comprimido), solo `arm64-v8a`, firmado (RSA de 4096 bits, SHA-256) y **verificado con `jarsigner`**. Contiene el mapa de ofuscación (`proguard.map`) para desofuscar fallos en Play, y ningún archivo de depuración |
 | `app-release.apk` | 35 238 516 bytes (33,6 MiB), `versionCode 7`, `versionName 0.4.1`, firma v2 **verificada con `apksigner`** |
 
+### Con la función Personas (sin versionar todavía)
+
+| Artefacto | Tamaño |
+|---|---|
+| `app-release.apk` (arm64) | 53 785 255 bytes (**51,3 MiB**; antes 33,6 MiB) |
+| `app-release.aab` (arm64) | 37 527 708 bytes (35,8 MiB; antes 18,1 MiB) |
+
+El aumento es el modelo de reconocimiento (18,5 MiB, que apenas se comprime) más 0,2 MiB del detector. La versión ya se subió a **0.5.0 (`versionCode` 8)** en `app/build.gradle.kts`; las cifras de arriba se midieron **antes** de subirla y los paquetes no se han regenerado con la versión nueva. Antes de publicar con la función, mira los [bloqueos](face-grouping.md#bloqueos-antes-de-publicar-en-google-play).
+
+### Sin la función Personas (`-PwithFaces=false`)
+
+```bash
+./gradlew :app:assembleRelease :app:bundleRelease -PwithFaces=false
+```
+
+| Artefacto | Tamaño |
+|---|---|
+| `app-release.apk` (arm64) | 35 523 220 bytes (33,9 MiB) |
+| `app-release.aab` (arm64) | 19 192 765 bytes (18,3 MiB) |
+
+Medido el 27 de octubre de 2026 (sin firmar: no hay claves en esta máquina). El paquete no contiene `assets/faces` ni los modelos (comprobado con `unzip -l`). Es la compilación que se puede publicar sin esperar a las revisiones de [«Bloqueos»](face-grouping.md#bloqueos-antes-de-publicar-en-google-play); ver [Compilar sin la función](face-grouping.md#compilar-sin-la-función) y la nota de la [lista de publicación](play-store/release-checklist.md#f-función-personas-rostros-bloqueos-específicos).
+
 El tamaño real de descarga lo calcula Play Console al subir el paquete; las cifras de arriba son las del archivo. No se ha subido ningún artefacto a Google Play.
 
 ## Antes de cada versión

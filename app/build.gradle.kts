@@ -20,6 +20,8 @@ val signingKeyAlias = signingValue("keyAlias", "S3VAULT_KEY_ALIAS")
 val signingKeyPassword = signingValue("keyPassword", "S3VAULT_KEY_PASSWORD")
 val hasReleaseSigning = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
 
+val withFaces = ((findProperty("withFaces") as String?) ?: "true").toBoolean()
+
 android {
     namespace = "com.s3vault.app"
     compileSdk = 36
@@ -28,10 +30,15 @@ android {
         applicationId = "com.s3vault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.4.1"
+        versionCode = 8
+        versionName = "0.5.0"
         testInstrumentationRunner = "com.s3vault.app.S3VaultTestRunner"
+        buildConfigField("boolean", "FACES", withFaces.toString())
     }
+
+    // `-PwithFaces=false` builds the app without the People feature: the two face models are left out of the package (about 18 MiB
+    // less) and no screen, setting or worker reaches the feature. The default keeps it (docs/face-grouping.md).
+    if (!withFaces) androidResources { ignoreAssetsPatterns += "!faces" }
 
     signingConfigs {
         if (hasReleaseSigning) {
@@ -87,6 +94,8 @@ android {
         getByName("androidTest") {
             java.srcDir("src/androidTest/kotlin")
             assets.srcDir("$projectDir/schemas")
+            // The public-domain photographs of the face tests are shared with the JVM tests (assets/faces/*.jpg).
+            assets.srcDir("$projectDir/src/test/resources")
         }
     }
 
@@ -160,6 +169,8 @@ dependencies {
     testImplementation(libs.room.testing)
     testImplementation(libs.work.testing)
     testImplementation(libs.turbine)
+    // The desktop build of ONNX Runtime, so the face pipeline can be tested against the real models on the JVM (see the exclusion below).
+    testImplementation(libs.onnxruntime.jvm)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
 
@@ -174,6 +185,20 @@ dependencies {
     androidTestImplementation(libs.work.testing)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+}
+
+// Optional: run the JVM tests with another JDK (`-PtestJavaHome=<path>`). Only needed on a Windows machine whose JDK ships a Visual C++
+// runtime older than the one the desktop ONNX Runtime needs: the JVM then dies inside msvcp140.dll when the face-model tests load the
+// real models. A copy of the JDK with the system's current msvcp140/vcruntime140 DLLs works (see docs/testing.md).
+tasks.withType<Test>().configureEach {
+    (findProperty("testJavaHome") as String?)?.let { home ->
+        executable = File(home, "bin/java" + if (org.gradle.internal.os.OperatingSystem.current().isWindows) ".exe" else "").path
+    }
+}
+
+// Unit tests run on the JVM: they use the desktop ONNX Runtime above, not the Android one (two copies of the same classes would clash).
+configurations.matching { it.name.contains("UnitTest", ignoreCase = true) }.configureEach {
+    exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
 }
 
 // OkHttp 5.4+ requires compileSdk 37 (not installed here); the AWS SDK works with 5.3.x.

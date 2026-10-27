@@ -110,6 +110,10 @@ class AppSettings(private val context: Context) {
         val semanticEnabled = booleanPreferencesKey("semantic_enabled")
         val semanticCharging = booleanPreferencesKey("semantic_only_charging")
         val modelWifiOnly = booleanPreferencesKey("model_wifi_only")
+        val faceEnabled = booleanPreferencesKey("face_enabled")
+        val faceCharging = booleanPreferencesKey("face_only_charging")
+        val faceGentle = booleanPreferencesKey("face_gentle")
+        val faceIntroSeen = booleanPreferencesKey("face_intro_seen")
         val spaceFavorites = booleanPreferencesKey("space_excl_favorites")
         val spaceRecentDays = intPreferencesKey("space_recent_days")
         val spaceBackedDays = intPreferencesKey("space_backed_days")
@@ -241,6 +245,22 @@ class AppSettings(private val context: Context) {
     /** The model download (about 150 MB) waits for an unmetered network by default. */
     val modelWifiOnly: Flow<Boolean> = store.data.map { it[K.modelWifiOnly] ?: true }
     suspend fun setModelWifiOnly(v: Boolean) = store.edit { it[K.modelWifiOnly] = v }.let { }
+
+    /** People (face grouping) is opt-in: off until the user has read what it does and turned it on. Nothing is analysed before. */
+    val faceEnabled: Flow<Boolean> = store.data.map { it[K.faceEnabled] ?: false }
+    suspend fun setFaceEnabled(v: Boolean) = store.edit { it[K.faceEnabled] = v }.let { }
+
+    /** Analyse in the background only while charging (the default: a first pass over a library is minutes to hours of CPU). */
+    val faceOnlyCharging: Flow<Boolean> = store.data.map { it[K.faceCharging] ?: true }
+    suspend fun setFaceOnlyCharging(v: Boolean) = store.edit { it[K.faceCharging] = v }.let { }
+
+    /** One photo at a time (the default). Off: a few at once, according to the device's cores. */
+    val faceGentle: Flow<Boolean> = store.data.map { it[K.faceGentle] ?: true }
+    suspend fun setFaceGentle(v: Boolean) = store.edit { it[K.faceGentle] = v }.let { }
+
+    /** The short explanation of what the face analysis does and where its data lives has been shown and accepted. */
+    val faceIntroSeen: Flow<Boolean> = store.data.map { it[K.faceIntroSeen] ?: false }
+    suspend fun setFaceIntroSeen(v: Boolean) = store.edit { it[K.faceIntroSeen] = v }.let { }
 
     /** The user's rules for what may be offered when freeing space. Cautious by default. */
     val spaceRules: Flow<com.s3vault.app.domain.space.SafetyRules> = store.data.map { p ->

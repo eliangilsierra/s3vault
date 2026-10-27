@@ -7,7 +7,7 @@
 | | Paso | Estado |
 |---|---|---|
 | ✅ | `targetSdk 36` (requisito vigente para envíos nuevos y actualizaciones) y `minSdk 29`; `applicationId` sin cambios (`com.s3vault.app`) | hecho en el repositorio |
-| ✅ | Versión **0.4.1 (versionCode 7)**. Cada subida a Play necesita un `versionCode` mayor que el anterior: **subirlo antes de cada nuevo envío** (`app/build.gradle.kts`) | hecho; mantener al día |
+| ✅ | Versión **0.5.0 (versionCode 8)**. Cada subida a Play necesita un `versionCode` mayor que el anterior: **subirlo antes de cada nuevo envío** (`app/build.gradle.kts`) | hecho; mantener al día |
 | ✅ | Paquete `app-release.aab` firmado, de solo `arm64-v8a`, sin archivos de depuración (ver [release.md](../release.md)) | hecho en el repositorio |
 | ✅ | Permisos mínimos y justificados ([declarations.md](declarations.md)); sin SDK de analítica ni publicidad | hecho |
 | ✅ | Pruebas: unitarias, instrumentadas en emulador, lint, R8 | ver [testing.md](../testing.md) |
@@ -55,3 +55,16 @@ Las versiones repartidas hasta ahora por Firebase App Distribution están firmad
 | 👤 | Vigilar los informes de ANR y fallos de Play Console (la app no lleva informes propios) y las reseñas |
 | 👤 | Cada versión nueva: subir `versionCode`, regenerar el `.aab`, repasar [data-safety.md](data-safety.md) si cambió algún flujo de datos |
 | 👤 | Cuando Play cambie el `targetSdk` exigido, actualizarlo y repasar [declarations.md](declarations.md) |
+
+## F. Función «Personas» (rostros): bloqueos específicos
+
+> **Atajo para publicar sin esperar a estas revisiones:** compila el paquete **sin la función** (`./gradlew :app:bundleRelease -PwithFaces=false`, ver [face-grouping.md](../face-grouping.md#compilar-sin-la-función)). Ese paquete no incluye los modelos ni ninguna pantalla de rostros, así que los pasos de esta sección no aplican a él. En ese caso **no publiques** la sección «Datos faciales» de la política de privacidad ni marques datos faciales en las declaraciones (ver [privacy-policy-es.md](privacy-policy-es.md) y [declarations.md](declarations.md)).
+
+| | Paso |
+|---|---|
+| 👤 | **Revisión legal de los datos de entrenamiento del modelo SFace** (CASIA-WebFace / VGGFace2 / MS-Celeb-1M según el artículo original) y de su licencia derivada; si no es aceptable, sustituir el modelo ([face-grouping.md](../face-grouping.md#bloqueos-antes-de-publicar-en-google-play)) |
+| 👤 | **Revisión legal del tratamiento de datos biométricos** según los países de distribución (RGPD art. 9 y leyes específicas); decidir si hace falta una evaluación de impacto |
+| 👤 | Publicar la política de privacidad **ya actualizada** con la sección «Datos faciales», idéntica a lo que hace la app |
+| 👤 | Comprobar en Play Console la política de «Datos de usuario» y el asistente de Seguridad de los datos el día del envío ([data-safety.md](data-safety.md)) |
+| 👤 | Probar en un **móvil ARM real** con una biblioteca grande: tiempo de análisis, batería, calor; y revisar con fotos propias la calidad de los grupos |
+| ✅ | Versión de la publicación que incluya Personas: **0.5.0 (versionCode 8)**, ya subida en `app/build.gradle.kts` (el paquete firmado hay que regenerarlo) |

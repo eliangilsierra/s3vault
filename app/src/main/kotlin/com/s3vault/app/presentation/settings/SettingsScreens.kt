@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -129,7 +130,7 @@ internal fun SettingsScaffold(
 // ------------------------------------------------------------------ Home
 
 @Composable
-fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?, onTools: () -> Unit = {}, onHelp: () -> Unit = {}) {
+fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit, onCosts: () -> Unit, costSummary: String?, onTools: () -> Unit = {}, onHelp: () -> Unit = {}, onPeople: () -> Unit = {}) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar("Ajustes") },
@@ -165,6 +166,13 @@ fun SettingsHome(onS3: () -> Unit, onSecurity: () -> Unit, onGeneral: () -> Unit
                     title = "Herramientas de la biblioteca", subtitle = "Sincronización, auditoría del respaldo y más",
                     icon = Icons.Filled.Build, onClick = onTools,
                 )
+                if (com.s3vault.app.data.faces.FaceFeature.available) {
+                    GroupDivider()
+                    SettingsRow(
+                        title = stringResource(com.s3vault.app.R.string.people_settings_row_title), subtitle = stringResource(com.s3vault.app.R.string.people_settings_row_subtitle),
+                        icon = Icons.Filled.Face, onClick = onPeople,
+                    )
+                }
             }
             SectionHeader("Preferencias")
             SettingsGroup {

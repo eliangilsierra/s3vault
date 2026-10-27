@@ -285,6 +285,21 @@ interface MediaDao {
      */
     @Query("UPDATE media_items SET syncState = 'LOCAL_ONLY', queuedAtMs = NULL, backupExcluded = 1 WHERE mediaStoreId IN (:ids) AND syncState = 'QUEUED'")
     suspend fun cancelQueued(ids: List<Long>): Int
+
+    /**
+     * Queues photos for a person's automatic-backup rule. Narrower than [enqueueAll] on purpose: only files that were never queued
+     * (a failed upload is the user's to retry), only ones still on the device, and never one whose S3 copy the user deleted on
+     * purpose (`backupExcluded`), whose flag [enqueueAll] would silently clear.
+     */
+    @Query("UPDATE media_items SET syncState = 'QUEUED', queuedAtMs = :nowMs, lastError = NULL, lastErrorPermanent = 0, attempts = 0 WHERE mediaStoreId IN (:ids) AND syncState = 'LOCAL_ONLY' AND present = 1 AND backupExcluded = 0")
+    suspend fun enqueueForRule(ids: List<Long>, nowMs: Long): Int
+
+    /** Undo of [enqueueForRule]: back to "only on this device" with no flag set, as the photos were before. Rows already uploading keep going. */
+    @Query("UPDATE media_items SET syncState = 'LOCAL_ONLY', queuedAtMs = NULL WHERE mediaStoreId IN (:ids) AND syncState = 'QUEUED'")
+    suspend fun dequeueForRule(ids: List<Long>): Int
+
+    @Query("SELECT mediaStoreId FROM media_items WHERE mediaStoreId IN (:ids) AND syncState = 'QUEUED'")
+    suspend fun stillQueued(ids: List<Long>): List<Long>
 }
 
 @Dao

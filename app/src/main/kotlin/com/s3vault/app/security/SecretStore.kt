@@ -15,6 +15,9 @@ interface SecretStore {
     fun put(name: String, value: ByteArray)
     fun get(name: String): ByteArray?
     fun delete(name: String)
+
+    /** True when something is stored under [name], even if it can no longer be decrypted (a lost key must not be mistaken for "never set"). */
+    fun exists(name: String): Boolean = get(name) != null
 }
 
 /**
@@ -68,6 +71,9 @@ class KeystoreSecretStore(
             null
         }
     }
+
+    @Synchronized
+    override fun exists(name: String): Boolean = file(name).exists()
 
     @Synchronized
     override fun delete(name: String) {

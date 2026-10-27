@@ -10,8 +10,10 @@ com.s3vault.app
 │   ├── sync/ integrity/ space/ duplicates/ smart/   centro de sincronización, veredictos de la auditoría, reglas de espacio, hash perceptual y agrupación, filtros de álbumes inteligentes: código puro
 │   ├── semantic/    paquete de modelo, tokenizador BPE, codec de vectores, top-K, traductor de consultas: código puro
 │   ├── onboarding/  política de cuándo se muestra el tutorial y lista de pasos de configuración de S3: código puro
+│   ├── faces/       modelo y umbrales, alineación, decodificador de YuNet, calidad, agrupación, política de respaldo por persona, sellado de huellas: código puro
 │   └── privacy/     VaultCrypto (AES-GCM por fragmentos), PrivateSession, VaultKeyring, modelos: código puro
 ├── data/local/      Room (índice y estado de sincronización), MediaStore (lectura), MediaIndexer (reconciliación), LibrarySql (consultas de la galería)
+├── data/faces/      OrtFaceEngine (ONNX Runtime: detector + reconocedor), decodificación con EXIF, recortes en memoria
 ├── data/privacy/    KeystoreKeyring (Keystore + BiometricPrompt), PrivateVaultStore (archivos cifrados + filas), PrivateMover, caché de imágenes descifradas
 ├── data/remote/     S3RemoteStorage (AWS SDK for Kotlin) + clasificación de errores
 ├── auth/            CredentialsRepository (validación, caducidad, almacenamiento), parser de credenciales temporales
@@ -19,6 +21,7 @@ com.s3vault.app
 ├── settings/        AppSettings (DataStore, sin secretos)
 ├── sync/            BackupEngine (+ miniaturas), RestoreEngine, RemoteCatalog, RemotePreviewRepository, Deletion (S3 y local), controladores, WorkManager
 └── presentation/    Compose: pantallas, ViewModels, navegación, tema
+    ├── people/      Personas: cuadrícula, detalle, regla de respaldo, revisión y ajustes ([face-grouping.md](face-grouping.md))
     ├── sync/ integrity/ space/ duplicates/ smart/ semantic/ privacy/ tools/   las herramientas de la biblioteca ([library-tools.md](library-tools.md))
     └── library/     motor y componentes compartidos por las dos galerías (ventana paginada, secciones, barra de filtros, hojas)
 ```
@@ -71,13 +74,14 @@ Principios:
 | OkHttp (transitiva del SDK) | forzado a 5.3.2 | 5.4+ exige `compileSdk 37`. El SDK funciona con 5.3.x. |
 | Tests | JUnit 4, MockK, MockWebServer 5.3.2, Robolectric 4.16.1, Espresso 3.7.0 | Espresso 3.7.0 es necesario en Android 17 (el anterior usa una API oculta eliminada). |
 
-| ONNX Runtime Android | 1.28.0 | Solo para la búsqueda por contenido opcional (MIT). Añade peso al APK: ver [semantic-search.md](semantic-search.md#peso-del-apk). Sin otras dependencias nuevas: el `BiometricPrompt` es el del framework, EXIF y miniaturas usan la plataforma Android. |
+| ONNX Runtime Android | 1.28.0 | Solo para la búsqueda por contenido opcional (MIT). Añade peso al APK: ver [semantic-search.md](semantic-search.md#peso-del-apk). Personas **no añade dependencias**: reutiliza ONNX Runtime con dos modelos que van en `assets/faces` (YuNet, MIT; SFace, Apache-2.0; ver [face-grouping.md](face-grouping.md)). Sin otras dependencias nuevas: el `BiometricPrompt` es el del framework, EXIF y miniaturas usan la plataforma Android. |
 
 Descartado tras evaluar: Amazon Cognito, SDK Java v2 (más pesado), firma SigV4 manual, bibliotecas S3-compatibles de terceros, Hilt, Paging 3, `androidx.security:crypto` (obsoleta; se usa Keystore + AES-GCM directamente de la plataforma).
 
 ## Decisiones relevantes
 
-- **Room v11:** v4→v5 resúmenes de tareas; v5→v6 marcador de versión (ETag) y auditoría; v6→v7 favorita y fecha de alta; v7→v8 duplicados; v8→v9 álbumes inteligentes; v9→v10 vectores; v10→v11 álbumes privados. Todas las migraciones son aditivas (tablas o columnas con valor por defecto), están en `AppDatabase.ALL_MIGRATIONS`, y `MigrationTest` las ejecuta desde los esquemas exportados (1→…→11).
+- **Room v12:** v11→v12 añade ocho tablas del índice facial (`face_photos`, `faces`, `people`, `face_rejections`, `person_merge_rejections`, `face_backup_rules`, `face_rule_exclusions`, `face_backup_decisions`), solo aditivo.
+- **Room v11:** v4→v5 resúmenes de tareas; v5→v6 marcador de versión (ETag) y auditoría; v6→v7 favorita y fecha de alta; v7→v8 duplicados; v8→v9 álbumes inteligentes; v9→v10 vectores; v10→v11 álbumes privados. Todas las migraciones son aditivas (tablas o columnas con valor por defecto), están en `AppDatabase.ALL_MIGRATIONS`, y `MigrationTest` las ejecuta desde los esquemas exportados (1→…→12).
 - **Room v3 (histórico):** `thumbnailUploaded` y `backupExcluded` (migración 1→2) y, para la galería inteligente, `dayKey`, `dateSource` y los índices por fecha (migración 2→3, con relleno en Kotlin); ambas probadas con el esquema exportado.
 - **`minSdk 29`:** MediaStore con *scoped storage* sin permisos de escritura heredados; las restauraciones se publican en `Pictures/S3Vault` con `IS_PENDING`.
 - **Sin multipart:** `PutObject` con SHA-256 explícito es simple y verificable. Límite de 4 GiB por archivo (el máximo de S3 es 5 GiB). Consecuencia: no hay cargas multipart incompletas que facturar.

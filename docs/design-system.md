@@ -107,3 +107,15 @@ Ajustes → Almacenamiento y costes (`StorageCostScreen`). Misma estructura que 
 - **Barras superiores:** los títulos son de una sola línea con puntos suspensivos y, en modo selección, de tamaño compacto: antes «3 seleccionadas» se cortaba a «3» junto a los cuatro iconos de acción.
 - **Textos y localización:** todo el texto **nuevo** (tutorial y ayuda) y el nombre de la app están en recursos de Android (`res/values/strings.xml`), en español. Los textos **anteriores** (unas 240 líneas en 17 archivos de interfaz) siguen escritos en el código: moverlos a recursos es mecánico pero toca cientos de textos que las pruebas buscan literalmente, así que se deja como tarea aparte y **no se ha hecho**. La app solo está en español.
 - **Tablets y pantallas grandes:** el contenido se limita a `Space.maxContent` (640 dp) y se centra; **no se ha probado en una tableta real**.
+
+## Personas (octubre de 2026)
+
+Aplicada de nuevo la skill `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, estados vacíos con acción, confirmación de acciones destructivas, animación mínima, color nunca como único indicador) y descartado otra vez el generador de páginas de marketing. Todo texto nuevo está en `res/values/strings_people.xml`.
+
+- **Rostros en círculo, fotos cuadradas.** Una persona se dibuja como un recorte circular de su rostro; las fotos mantienen la celda cuadrada de la galería. El recorte se corta de la foto al dibujarlo y vive solo en memoria.
+- **Siempre «estimación».** La cuadrícula y la ficha dicen que los grupos son automáticos y pueden equivocarse; un grupo sin revisar lo dice con texto («Sin revisar» / «Confirmada» con icono) y su ficha ofrece «Confirmar grupo».
+- **Siete estados de la pantalla** (`PeoplePhase`, probados): sin fotos, sin empezar, modelo no disponible, índice ilegible, analizando/en espera (con progreso real), sin grupos fiables y grupos (con avisos de incompleto o actualizando).
+- **Primera vez.** Un diálogo de seis puntos (qué hace, dónde ocurre, qué sale del móvil, qué se guarda, cómo se borra, hasta dónde fiarse) precede a la activación; cerrarlo no cambia nada.
+- **Regla de respaldo en dos pasos.** Hoja con *qué fotos* (nuevas / también las que ya tengo, con recuento y tamaño reales y las fotos para quitar de la lista), *con qué seguridad* y un resumen de lo que pasará antes del botón «Activar». Si el grupo no está confirmado, la hoja lo pide primero. Después, un aviso con «Deshacer».
+- **Revisar** separa lo que la app no sabe: posibles coincidencias (✓/✗ con descripción accesible por rostro), grupos que podrían ser uno, fotos para decidir y rostros sin grupo.
+- Probado en tema oscuro y con texto al 150 % (capturas en `PeopleUiTest`); objetivos de 48 dp, cada rostro y foto con descripción, sin animaciones nuevas.

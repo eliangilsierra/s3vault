@@ -55,6 +55,16 @@ interface WorkScheduler {
     /** Daily pass that indexes newly added pictures while the feature is on; [enabled] false removes it. */
     fun configureSemanticSchedule(enabled: Boolean, onlyCharging: Boolean)
 
+    /**
+     * Analyses the photos that have no face result yet. Needs no network (the models ship with the app); waits for the battery not to be
+     * low, and for charging when [onlyCharging]. [continuation] queues behind the run that just ended instead of being ignored.
+     */
+    fun kickFaceIndex(onlyCharging: Boolean, continuation: Boolean = false)
+    fun cancelFaceIndex()
+
+    /** Daily pass that analyses newly added photos while the feature is on; [enabled] false removes it. */
+    fun configureFaceSchedule(enabled: Boolean, onlyCharging: Boolean)
+
     /** Downloads the model pack (about 150 MB), resumably, on the network the user allowed. */
     fun kickModelDownload(wifiOnly: Boolean)
     fun cancelModelDownload()
@@ -172,6 +182,27 @@ class WorkManagerScheduler(private val context: Context) : WorkScheduler {
         wm.enqueueUniquePeriodicWork(SEMANTIC_AUTO_WORK, ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 
+    override fun kickFaceIndex(onlyCharging: Boolean, continuation: Boolean) {
+        // No network constraint: the analysis is entirely on the device.
+        val req = OneTimeWorkRequestBuilder<FaceIndexWorker>()
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresCharging(onlyCharging).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
+            .setInputData(Data.Builder().putBoolean(FaceIndexWorker.KEY_CHARGING, onlyCharging).build())
+            .build()
+        wm.enqueueUniqueWork(FACE_WORK, if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, req)
+    }
+
+    override fun cancelFaceIndex() { wm.cancelUniqueWork(FACE_WORK) }
+
+    override fun configureFaceSchedule(enabled: Boolean, onlyCharging: Boolean) {
+        if (!enabled) { wm.cancelUniqueWork(FACE_AUTO_WORK); return }
+        val req = PeriodicWorkRequestBuilder<FaceIndexWorker>(1, TimeUnit.DAYS)
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresCharging(onlyCharging).build())
+            .setInputData(Data.Builder().putBoolean(FaceIndexWorker.KEY_CHARGING, onlyCharging).build())
+            .build()
+        wm.enqueueUniquePeriodicWork(FACE_AUTO_WORK, ExistingPeriodicWorkPolicy.UPDATE, req)
+    }
+
     override fun kickModelDownload(wifiOnly: Boolean) {
         val req = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setConstraints(constraints(wifiOnly))
@@ -204,6 +235,8 @@ class WorkManagerScheduler(private val context: Context) : WorkScheduler {
         const val SEMANTIC_WORK = "s3vault-semantic-index"
         const val SEMANTIC_AUTO_WORK = "s3vault-semantic-index-auto"
         const val MODEL_WORK = "s3vault-model-download"
+        const val FACE_WORK = "s3vault-face-index"
+        const val FACE_AUTO_WORK = "s3vault-face-index-auto"
         const val DUPLICATES_WORK = "s3vault-duplicates"
         const val AUDIT_WORK = "s3vault-audit"
         const val AUDIT_AUTO_WORK = "s3vault-audit-auto"
@@ -361,6 +394,30 @@ class SemanticIndexWorker(context: Context, params: WorkerParameters) : Coroutin
             throw e
         } catch (e: Exception) {
             SafeLog.e("SemanticIndexWorker", "Indexing failed", e)
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+
+    companion object { const val KEY_CHARGING = "charging" }
+}
+
+class FaceIndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val c = (applicationContext as S3VaultApp).container
+        if (!com.s3vault.app.data.faces.FaceFeature.available || !c.settings.faceEnabled.first()) return Result.success() // turned off while the work was waiting
+        return try {
+            when (val r = c.faceIndexer.run(workers = c.faceWorkers())) {
+                is FaceRunOutcome.Done -> {
+                    // Bounded per run; whatever is left continues as a new run under the same constraints.
+                    if (r.left > 0 && r.analyzed + r.unreadable > 0) c.scheduler.kickFaceIndex(inputData.getBoolean(KEY_CHARGING, true), continuation = true)
+                    Result.success()
+                }
+                FaceRunOutcome.ModelMissing, FaceRunOutcome.IndexUnreadable, FaceRunOutcome.Busy, FaceRunOutcome.QuotaReached, FaceRunOutcome.LowStorage -> Result.success()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SafeLog.e("FaceIndexWorker", "Face analysis failed", e)
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }

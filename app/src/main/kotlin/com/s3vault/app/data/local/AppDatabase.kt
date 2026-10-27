@@ -30,8 +30,16 @@ import java.time.ZoneId
         PrivateVaultEntity::class,
         PrivateAlbumEntity::class,
         PrivateItemEntity::class,
+        FacePhotoEntity::class,
+        FaceEntity::class,
+        PersonEntity::class,
+        FaceRejectionEntity::class,
+        PersonMergeRejectionEntity::class,
+        FaceBackupRuleEntity::class,
+        FaceRuleExclusionEntity::class,
+        FaceBackupDecisionEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,13 +53,72 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun smartAlbums(): SmartAlbumDao
     abstract fun semantic(): SemanticDao
     abstract fun privateVault(): PrivateDao
+    abstract fun faces(): FaceDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "s3vault.db").addMigrations(*ALL_MIGRATIONS).build()
 
         /** Every migration, in order: the app and the tests open the database with exactly this list. */
-        val ALL_MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+        val ALL_MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+
+        /**
+         * People and face-based automatic backup. New tables only: no existing row or file is touched, and nothing is analysed until the
+         * user turns the feature on. The vectors and group centres are stored sealed (AES-GCM); see FaceVault.
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_photos` (`mediaStoreId` INTEGER NOT NULL, `sizeBytes` INTEGER NOT NULL, `dateModifiedSec` INTEGER NOT NULL, " +
+                        "`pipelineVersion` INTEGER NOT NULL, `modelId` TEXT NOT NULL, `status` TEXT NOT NULL, `faces` INTEGER NOT NULL, `skipped` INTEGER NOT NULL, " +
+                        "`analyzedAtMs` INTEGER NOT NULL, PRIMARY KEY(`mediaStoreId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_photos_status` ON `face_photos` (`status`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `people` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT, `ordinal` INTEGER NOT NULL, `state` TEXT NOT NULL, " +
+                        "`centroidSealed` BLOB, `centroidCount` INTEGER NOT NULL, `coverFaceId` INTEGER, `createdAtMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_people_state` ON `people` (`state`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `faces` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaStoreId` INTEGER NOT NULL, `boxLeft` REAL NOT NULL, " +
+                        "`boxTop` REAL NOT NULL, `boxRight` REAL NOT NULL, `boxBottom` REAL NOT NULL, `detScore` REAL NOT NULL, `quality` REAL NOT NULL, `modelId` TEXT NOT NULL, " +
+                        "`sealed` BLOB NOT NULL, `personId` INTEGER, `assignment` TEXT NOT NULL, `matchScore` REAL NOT NULL, `margin` REAL NOT NULL, `suggestedPersonId` INTEGER, " +
+                        "`createdAtMs` INTEGER NOT NULL, FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faces_mediaStoreId` ON `faces` (`mediaStoreId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faces_personId` ON `faces` (`personId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faces_suggestedPersonId` ON `faces` (`suggestedPersonId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faces_assignment` ON `faces` (`assignment`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_rejections` (`faceId` INTEGER NOT NULL, `personId` INTEGER NOT NULL, `createdAtMs` INTEGER NOT NULL, PRIMARY KEY(`faceId`, `personId`), " +
+                        "FOREIGN KEY(`faceId`) REFERENCES `faces`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                        "FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_rejections_personId` ON `face_rejections` (`personId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `person_merge_rejections` (`lowId` INTEGER NOT NULL, `highId` INTEGER NOT NULL, `createdAtMs` INTEGER NOT NULL, PRIMARY KEY(`lowId`, `highId`), " +
+                        "FOREIGN KEY(`lowId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                        "FOREIGN KEY(`highId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_person_merge_rejections_highId` ON `person_merge_rejections` (`highId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_backup_rules` (`personId` INTEGER NOT NULL, `state` TEXT NOT NULL, `scope` TEXT NOT NULL, `policy` TEXT NOT NULL, " +
+                        "`enabledAtMs` INTEGER NOT NULL, `newSinceSec` INTEGER NOT NULL, `existingPending` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`personId`), " +
+                        "FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_rule_exclusions` (`personId` INTEGER NOT NULL, `mediaStoreId` INTEGER NOT NULL, `createdAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`personId`, `mediaStoreId`), FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_rule_exclusions_mediaStoreId` ON `face_rule_exclusions` (`mediaStoreId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_backup_decisions` (`mediaStoreId` INTEGER NOT NULL, `personId` INTEGER NOT NULL, `outcome` TEXT NOT NULL, `reason` TEXT NOT NULL, " +
+                        "`decidedAtMs` INTEGER NOT NULL, PRIMARY KEY(`mediaStoreId`, `personId`), FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_backup_decisions_personId_outcome` ON `face_backup_decisions` (`personId`, `outcome`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_backup_decisions_outcome` ON `face_backup_decisions` (`outcome`)")
+            }
+        }
 
         /**
          * Private albums: the wrapped vault key, the albums (sealed names) and the protected pictures (sealed metadata). New tables
