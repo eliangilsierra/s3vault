@@ -55,14 +55,14 @@ $ANDROID_HOME/build-tools/<versión>/apksigner verify --print-certs app/build/ou
 | `app-release.aab` | 18 991 426 bytes (18,1 MiB comprimido), solo `arm64-v8a`, firmado (RSA de 4096 bits, SHA-256) y **verificado con `jarsigner`**. Contiene el mapa de ofuscación (`proguard.map`) para desofuscar fallos en Play, y ningún archivo de depuración |
 | `app-release.apk` | 35 238 516 bytes (33,6 MiB), `versionCode 7`, `versionName 0.4.1`, firma v2 **verificada con `apksigner`** |
 
-### Con la función Personas (sin versionar todavía)
+### Con la función Personas (versión 0.5.0, versionCode 8)
 
 | Artefacto | Tamaño |
 |---|---|
-| `app-release.apk` (arm64) | 53 785 255 bytes (**51,3 MiB**; antes 33,6 MiB) |
-| `app-release.aab` (arm64) | 37 527 708 bytes (35,8 MiB; antes 18,1 MiB) |
+| `app-release.apk` (arm64) | 53 786 359 bytes (**51,3 MiB**; antes 33,6 MiB), `versionCode 8`, `versionName 0.5.0`, firma v2 **verificada con `apksigner`**, con `assets/faces`; SHA-256 `f9a9d940b81a99f857b9a363e4db0cade9209e831609b1b20038eaa28c2c30ec` (27 de octubre de 2026) |
+| `app-release.aab` (arm64) | 37 527 708 bytes (35,8 MiB; antes 18,1 MiB). Medido el 26 de octubre, **antes** de subir la versión: no se ha regenerado con 0.5.0 |
 
-El aumento es el modelo de reconocimiento (18,5 MiB, que apenas se comprime) más 0,2 MiB del detector. La versión ya se subió a **0.5.0 (`versionCode` 8)** en `app/build.gradle.kts`; las cifras de arriba se midieron **antes** de subirla y los paquetes no se han regenerado con la versión nueva. Antes de publicar con la función, mira los [bloqueos](face-grouping.md#bloqueos-antes-de-publicar-en-google-play).
+El aumento es el modelo de reconocimiento (18,5 MiB, que apenas se comprime) más 0,2 MiB del detector. Antes de publicar con la función, mira los [bloqueos](face-grouping.md#bloqueos-antes-de-publicar-en-google-play).
 
 ### Sin la función Personas (`-PwithFaces=false`)
 
@@ -75,7 +75,7 @@ El aumento es el modelo de reconocimiento (18,5 MiB, que apenas se comprime) má
 | `app-release.apk` (arm64) | 35 523 220 bytes (33,9 MiB) |
 | `app-release.aab` (arm64) | 19 192 765 bytes (18,3 MiB) |
 
-Medido el 27 de octubre de 2026 (sin firmar: no hay claves en esta máquina). El paquete no contiene `assets/faces` ni los modelos (comprobado con `unzip -l`). Es la compilación que se puede publicar sin esperar a las revisiones de [«Bloqueos»](face-grouping.md#bloqueos-antes-de-publicar-en-google-play); ver [Compilar sin la función](face-grouping.md#compilar-sin-la-función) y la nota de la [lista de publicación](play-store/release-checklist.md#f-función-personas-rostros-bloqueos-específicos).
+Medido el 27 de octubre de 2026, antes de subir la versión (con la clave local de `keystore.properties`, que se aplica sola; **no se verificó la firma** de estos dos artefactos). El paquete no contiene `assets/faces` ni los modelos (comprobado con `unzip -l`). Es la compilación que se puede publicar sin esperar a las revisiones de [«Bloqueos»](face-grouping.md#bloqueos-antes-de-publicar-en-google-play); ver [Compilar sin la función](face-grouping.md#compilar-sin-la-función) y la nota de la [lista de publicación](play-store/release-checklist.md#f-función-personas-rostros-bloqueos-específicos).
 
 El tamaño real de descarga lo calcula Play Console al subir el paquete; las cifras de arriba son las del archivo. No se ha subido ningún artefacto a Google Play.
 
