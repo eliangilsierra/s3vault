@@ -225,4 +225,46 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test fun version11To12AddsTheFaceTablesAndTouchesNothingElse() = runBlocking {
+        createDatabase(11) { db ->
+            db.execSQL(v5Media.replace("dateSource) VALUES", "dateSource, remoteEtag, isFavorite, dateAddedSec) VALUES").replace("'CAPTURE')", "'CAPTURE', 'etag1', 1, 99)"))
+            db.execSQL("INSERT INTO albums (id, name, createdAtMs) VALUES (1, 'Amor', 5)")
+            db.execSQL("INSERT INTO album_items (albumId, mediaStoreId, addedAtMs) VALUES (1, 7, 6)")
+            db.execSQL("INSERT INTO semantic_embeddings (mediaStoreId, modelId, sizeBytes, dateModifiedSec, ok, scale, vector, indexedAtMs) VALUES (7, 'm', 10, 1, 1, 0.5, x'0102', 9)")
+        }
+        val db = Room.databaseBuilder(target, AppDatabase::class.java, name).addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
+        try {
+            val m = db.media().get(7)!!
+            assertEquals("the photo and its backup state survived", SyncState.BACKED_UP, m.syncState)
+            assertEquals("etag1", m.remoteEtag)
+            assertEquals(listOf("Amor"), db.albums().all().map { it.name })
+            assertEquals("the search vectors survived", 1, db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM semantic_embeddings").use { it.moveToFirst(); it.getInt(0) })
+            val dao = db.faces()
+            // Nothing is analysed, grouped or ruled until the user turns the feature on.
+            assertEquals(0, dao.people().size)
+            assertEquals(0, dao.rules().size)
+            assertEquals(1, dao.needAnalysisCount("model", 1))
+            val now = 10L
+            val person = dao.insertPerson(com.s3vault.app.data.local.PersonEntity(ordinal = 1, createdAtMs = now, updatedAtMs = now))
+            val face = dao.insertFaces(listOf(com.s3vault.app.data.local.FaceEntity(
+                mediaStoreId = 7, boxLeft = 0.1f, boxTop = 0.1f, boxRight = 0.4f, boxBottom = 0.5f, detScore = 0.9f, quality = 0.8f, modelId = "model",
+                sealed = byteArrayOf(1, 2, 3), personId = person, assignment = com.s3vault.app.domain.faces.FaceAssignment.AUTO, createdAtMs = now,
+            ))).single()
+            dao.insertRejections(listOf(com.s3vault.app.data.local.FaceRejectionEntity(face, person, now)))
+            dao.upsertRule(com.s3vault.app.data.local.FaceBackupRuleEntity(person, com.s3vault.app.domain.faces.RuleState.ACTIVE, com.s3vault.app.domain.faces.RuleScope.NEW_ONLY, com.s3vault.app.domain.faces.RulePolicy.STRICT, now, 5, false, now))
+            dao.insertExclusions(listOf(com.s3vault.app.data.local.FaceRuleExclusionEntity(person, 7, now)))
+            dao.upsertDecisions(listOf(com.s3vault.app.data.local.FaceBackupDecisionEntity(7, person, com.s3vault.app.domain.faces.DecisionOutcome.REVIEW, com.s3vault.app.domain.faces.DecisionReason.AMBIGUOUS, now)))
+            // Deleting a group removes its rule, exclusions, decisions and rejections, frees its faces, and never touches the photo.
+            dao.deletePerson(person)
+            assertEquals(0, dao.rules().size)
+            assertEquals(0, dao.exclusions(person).size)
+            assertEquals(0, dao.decisions(person).size)
+            assertEquals(0, dao.rejectionsOf(listOf(face)).size)
+            assertEquals(null, dao.face(face)!!.personId)
+            assertEquals("the photo was never touched", SyncState.BACKED_UP, db.media().get(7)!!.syncState)
+        } finally {
+            db.close()
+        }
+    }
 }

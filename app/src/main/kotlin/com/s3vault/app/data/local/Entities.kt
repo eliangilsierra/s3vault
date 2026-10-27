@@ -220,6 +220,8 @@ object JobNames {
     const val DUPLICATES = "duplicates"
     const val SEMANTIC = "semantic-index"
     const val MODEL_DOWNLOAD = "model-download"
+    const val FACES = "face-index"
+    const val FACE_RULES = "face-rules"
 }
 
 /** What an audit concluded about one S3 object that a backup record points to. */
