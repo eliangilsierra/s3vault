@@ -104,6 +104,14 @@ class OnboardingRenderTest {
         walk("onboarding-dark-x2")
     }
 
+    @Test fun theWelcomePageShowsTheBrandMarkAboveItsHeadingEvenWithHugeText() {
+        tour()
+        val heading = compose.onNodeWithText(s(R.string.onb_welcome_title)).assertIsDisplayed()
+        // The mark is decorative (no semantics): the heading above is still the only thing announced for the page title.
+        heading.assertHeightIsAtLeast(24.dp)
+        shot("onboarding-welcome-brand-dark-x2")
+    }
+
     @Test fun theLongestPageStillReachesItsLastLineWithHugeText() {
         tour()
         compose.onNodeWithText(s(R.string.onb_start)).performClick()

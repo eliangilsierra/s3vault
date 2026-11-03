@@ -69,6 +69,7 @@ import com.s3vault.app.domain.onboarding.StepState
 import com.s3vault.app.presentation.mediaPermissions
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.theme.status
+import com.s3vault.app.presentation.ui.BrandMark
 import com.s3vault.app.presentation.ui.PrimaryButton
 import com.s3vault.app.presentation.ui.QuietButton
 import com.s3vault.app.presentation.ui.SecondaryButton
@@ -212,7 +213,11 @@ private fun LinkButton(textRes: Int, url: String, open: (String) -> Unit) {
 
 @Composable
 private fun Welcome() {
-    PageHeader(Icons.Filled.PhotoLibrary, stringResource(R.string.onb_welcome_title))
+    // The first thing a person sees: the brand mark instead of a generic icon. Decorative, like the other page icons.
+    Column(verticalArrangement = Arrangement.spacedBy(Space.m)) {
+        BrandMark(72.dp)
+        Text(stringResource(R.string.onb_welcome_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+    }
     Body(stringResource(R.string.onb_welcome_body))
     Bullet(Icons.Filled.Image, stringResource(R.string.onb_welcome_b1))
     Bullet(Icons.Filled.CloudQueue, stringResource(R.string.onb_welcome_b2))
