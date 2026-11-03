@@ -30,8 +30,8 @@ android {
         applicationId = "com.s3vault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.5.0"
+        versionCode = 9
+        versionName = "0.5.1"
         testInstrumentationRunner = "com.s3vault.app.S3VaultTestRunner"
         buildConfigField("boolean", "FACES", withFaces.toString())
     }
