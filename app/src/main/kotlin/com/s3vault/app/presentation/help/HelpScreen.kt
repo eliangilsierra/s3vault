@@ -43,6 +43,7 @@ import com.s3vault.app.presentation.onboarding.rememberLinkOpener
 import com.s3vault.app.presentation.theme.Space
 import com.s3vault.app.presentation.ui.AppTopBar
 import com.s3vault.app.presentation.ui.BackButton
+import com.s3vault.app.presentation.ui.BrandMark
 import com.s3vault.app.presentation.ui.QuietButton
 import com.s3vault.app.presentation.ui.SectionHeader
 import com.s3vault.app.presentation.ui.SettingsGroup
@@ -97,7 +98,7 @@ fun HelpScreen(versionName: String, onBack: () -> Unit, onReplayTour: () -> Unit
                 }
                 SectionHeader(stringResource(R.string.help_about_title))
                 SettingsGroup {
-                    SettingsRow(title = stringResource(R.string.help_about_version, versionName))
+                    AboutBrand(versionName)
                     SettingsRow(
                         title = stringResource(R.string.help_about_issues), subtitle = stringResource(R.string.help_about_issues_sub),
                         icon = Icons.AutoMirrored.Filled.OpenInNew, onClick = { open(Links.ISSUES) },
@@ -108,6 +109,21 @@ fun HelpScreen(versionName: String, onBack: () -> Unit, onReplayTour: () -> Unit
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.s),
                 )
             }
+        }
+    }
+}
+
+/** The app's name and version next to its mark. One spoken item ("S3 Vault, Versión x"); the mark itself is decorative. */
+@Composable
+private fun AboutBrand(versionName: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Space.l, vertical = Space.l).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.l),
+    ) {
+        BrandMark(52.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.help_about_version, versionName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

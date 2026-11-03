@@ -130,4 +130,12 @@ class OnboardingRenderTest {
         compose.onNodeWithText(s(R.string.help_link_aws_pricing)).performScrollTo().assertIsDisplayed()
         shot("help-dark-x2")
     }
+
+    @Test fun theAboutBlockShowsTheNameAndVersionNextToTheMarkWithHugeText() {
+        render(ThemeMode.DARK, 2f) { HelpScreen(versionName = "9.9.9", onBack = {}, onReplayTour = {}) }
+        compose.onNodeWithText(s(R.string.app_name)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ctx.getString(R.string.help_about_version, "9.9.9")).assertIsDisplayed()
+        compose.onNodeWithText(s(R.string.help_about_issues)).performScrollTo().assertIsDisplayed()
+        shot("help-about-brand-dark-x2")
+    }
 }
