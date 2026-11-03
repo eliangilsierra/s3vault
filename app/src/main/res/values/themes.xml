@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.S3Vault" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.S3Vault.Base" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/window_background</item>
     </style>
+
+    <!-- What the manifest uses. Android 12+ adds the launch screen in values-v31. -->
+    <style name="Theme.S3Vault" parent="Theme.S3Vault.Base" />
 </resources>

@@ -62,6 +62,14 @@ $ANDROID_HOME/build-tools/<versión>/apksigner verify --print-certs app/build/ou
 | `app-release.apk` (arm64) | 53 786 359 bytes (**51,3 MiB**; antes 33,6 MiB), `versionCode 8`, `versionName 0.5.0`, firma v2 **verificada con `apksigner`**, con `assets/faces`; SHA-256 `f9a9d940b81a99f857b9a363e4db0cade9209e831609b1b20038eaa28c2c30ec` (27 de octubre de 2026) |
 | `app-release.aab` (arm64) | 37 527 708 bytes (35,8 MiB; antes 18,1 MiB). Medido el 26 de octubre, **antes** de subir la versión: no se ha regenerado con 0.5.0 |
 
+### Versión 0.5.1, versionCode 9 (nueva marca, con Personas)
+
+| Artefacto | Resultado |
+|---|---|
+| `app-release.apk` (arm64) | 53 787 123 bytes (51,3 MiB), `versionCode 9`, `versionName 0.5.1`, solo `arm64-v8a`, con `assets/faces`, mismos permisos que la 0.5.0, firma v2 **verificada con `apksigner`**; SHA-256 `f714951a7ed20bf59c62917be5c1c8f4940e595f5b7f70e436abb85ceeb1e53b` (2 de noviembre de 2026) |
+
+No se probó instalarla **encima** de una 0.5.0 firmada (en el emulador solo hay compilaciones de depuración) ni en un móvil real. El `.aab` no se ha regenerado.
+
 El aumento es el modelo de reconocimiento (18,5 MiB, que apenas se comprime) más 0,2 MiB del detector. Antes de publicar con la función, mira los [bloqueos](face-grouping.md#bloqueos-antes-de-publicar-en-google-play).
 
 ### Sin la función Personas (`-PwithFaces=false`)

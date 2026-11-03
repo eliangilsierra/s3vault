@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ launch screen: the mark on the icon's deep teal, in light and dark alike. Older versions keep the plain window
+         background (no splash library is added for them). -->
+    <style name="Theme.S3Vault" parent="Theme.S3Vault.Base">
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

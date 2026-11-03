@@ -104,6 +104,14 @@ class OnboardingRenderTest {
         walk("onboarding-dark-x2")
     }
 
+    @Test fun theWelcomePageShowsTheBrandMarkAboveItsHeadingEvenWithHugeText() {
+        tour()
+        val heading = compose.onNodeWithText(s(R.string.onb_welcome_title)).assertIsDisplayed()
+        // The mark is decorative (no semantics): the heading above is still the only thing announced for the page title.
+        heading.assertHeightIsAtLeast(24.dp)
+        shot("onboarding-welcome-brand-dark-x2")
+    }
+
     @Test fun theLongestPageStillReachesItsLastLineWithHugeText() {
         tour()
         compose.onNodeWithText(s(R.string.onb_start)).performClick()
@@ -121,5 +129,13 @@ class OnboardingRenderTest {
         compose.onNodeWithText(s(R.string.help_cost_title)).performScrollTo().performClick()
         compose.onNodeWithText(s(R.string.help_link_aws_pricing)).performScrollTo().assertIsDisplayed()
         shot("help-dark-x2")
+    }
+
+    @Test fun theAboutBlockShowsTheNameAndVersionNextToTheMarkWithHugeText() {
+        render(ThemeMode.DARK, 2f) { HelpScreen(versionName = "9.9.9", onBack = {}, onReplayTour = {}) }
+        compose.onNodeWithText(s(R.string.app_name)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(ctx.getString(R.string.help_about_version, "9.9.9")).assertIsDisplayed()
+        compose.onNodeWithText(s(R.string.help_about_issues)).performScrollTo().assertIsDisplayed()
+        shot("help-about-brand-dark-x2")
     }
 }
