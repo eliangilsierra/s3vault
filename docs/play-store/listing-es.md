@@ -64,8 +64,8 @@ LIMITACIONES
 
 | Recurso | Archivo | Estado |
 |---|---|---|
-| Icono 512×512 PNG 32 bits | [`assets/icon-512.png`](assets/icon-512.png) | Generado a partir del icono vectorial de la app (misma identidad). Revisar. |
-| Gráfico de funciones 1024×500 | [`assets/feature-graphic-1024x500.png`](assets/feature-graphic-1024x500.png) | Borrador sencillo (marca + eslogan). El propietario puede sustituirlo. |
+| Icono 512×512 PNG 32 bits | [`assets/icon-512.png`](assets/icon-512.png) | Es el icono de lanzador de la app (la S de dos mitades, fondo `#0E2A2D`), a pantalla completa: Play aplica su propia máscara. Revisar. |
+| Gráfico de funciones 1024×500 | [`assets/feature-graphic-1024x500.png`](assets/feature-graphic-1024x500.png) | Símbolo y logotipo «s3vault» sobre `#0E2A2D`, **sin eslogan** (el logotipo está dibujado y no hay fuente con licencia para el texto). El nombre de la ficha sigue siendo «S3 Vault»: decidir si el logotipo se escribe `s3vault` o «S3 Vault». El propietario puede sustituirlo. |
 | Capturas de teléfono (7) | [`screenshots/`](screenshots/) | 1080×2160 (proporción 2:1, el máximo que admite Play), PNG de 24 bits sin alfa. Las fotos son paisajes dibujados por código (no hay fotos personales ni de terceros). |
 
 Capturas incluidas: galería, selección con «Respaldar en S3», bienvenida del tutorial, «Cómo se guardan tus fotos», herramientas, ajustes y ayuda. **Faltan** (no se pueden mostrar sin una cuenta de AWS real): pestañas Respaldo y S3 con datos reales. Se recomienda añadirlas con un bucket de pruebas del propietario, sin fotos privadas. Las capturas de tableta (7 y 10 pulgadas) son opcionales; no se han hecho.

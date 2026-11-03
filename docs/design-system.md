@@ -119,3 +119,13 @@ Aplicada de nuevo la skill `ui-ux-pro-max` (reglas de UX: objetivos ≥ 44 px, e
 - **Regla de respaldo en dos pasos.** Hoja con *qué fotos* (nuevas / también las que ya tengo, con recuento y tamaño reales y las fotos para quitar de la lista), *con qué seguridad* y un resumen de lo que pasará antes del botón «Activar». Si el grupo no está confirmado, la hoja lo pide primero. Después, un aviso con «Deshacer».
 - **Revisar** separa lo que la app no sabe: posibles coincidencias (✓/✗ con descripción accesible por rostro), grupos que podrían ser uno, fotos para decidir y rostros sin grupo.
 - Probado en tema oscuro y con texto al 150 % (capturas en `PeopleUiTest`); objetivos de 48 dp, cada rostro y foto con descripción, sin animaciones nuevas.
+
+## Marca
+
+La marca es una **S hecha de dos mitades** que se encuentran en el eje vertical: la superior es «este dispositivo» y la inferior es «tu S3» (las dos ubicaciones que la app distingue siempre). Mitad superior: el color primario del tema (verde azulado en claro, aqua en oscuro); mitad inferior: `#2B9CA2`. El fondo del icono es `#0E2A2D`.
+
+- **Icono de lanzador:** `mipmap-anydpi/ic_launcher.xml` con primer plano `ic_launcher_foreground` (aqua + arena sobre `#0E2A2D`) y capa monocroma propia `ic_launcher_monochrome` para los iconos tematizados de Android 13+.
+- **`BrandMark`** (`presentation/ui/BrandMark.kt`): el mismo símbolo dibujado con `Canvas`, decorativo (sin semántica), con colores del tema. Aparece en la primera página del tutorial y en «Acerca de» de la Ayuda. No se usa como botón ni como indicador de estado.
+- **Pantalla de arranque (Android 12+):** el símbolo sobre `#0E2A2D` (`values-v31/themes.xml`). Android 10-11 mantienen el fondo liso de la ventana; no hay biblioteca de splash.
+- **Ficha de Play:** icono y gráfico de funciones en [`play-store/assets/`](play-store/assets/).
+- **Pendiente de decisión:** la grafía del nombre («S3 Vault» en la interfaz) frente al logotipo `s3vault`, y si en un bloque horizontal conviene repetir la S.
